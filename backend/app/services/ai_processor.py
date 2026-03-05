@@ -12,20 +12,13 @@ from loguru import logger
 
 # AI Models
 from faster_whisper import WhisperModel
-from transformers import (
-    AutoTokenizer, AutoModelForSequenceClassification, 
-    AutoModelForSeq2SeqLM, pipeline
-)
+from transformers import pipeline, AutoModelForSeq2SeqLM, AutoTokenizer
 import torch
-from pyannote.audio import Pipeline
 from keybert import KeyBERT
 import spacy
 import wikipediaapi
 
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from config import settings
+from ..config import settings
 
 
 class TranscriptionService:
@@ -100,110 +93,6 @@ class TranscriptionService:
                 "error": str(e)
             }
 
-
-class SpeakerIdentificationService:
-    """Handles speaker identification and diarization using pyannote.audio"""
-    
-    def __init__(self):
-        self.pipeline = None
-        
-    async def initialize(self):
-        """Initialize the speaker diarization pipeline"""
-        if self.pipeline is None:
-            try:
-                logger.info("Loading pyannote speaker diarization model")
-                self.pipeline = Pipeline.from_pretrained(
-                    "pyannote/speaker-diarization-3.1",
-                    use_auth_token=settings.PYANNOTE_AUTH_TOKEN
-                )
-                
-                if torch.cuda.is_available() and settings.ENABLE_GPU:
-                    self.pipeline = self.pipeline.to(torch.device("cuda"))
-                    
-                logger.info("Speaker diarization model loaded successfully")
-            except Exception as e:
-                logger.error(f"Error loading pyannote model: {e}")
-                logger.warning("Falling back to simple speaker labeling")
-                self.pipeline = None
-    
-    async def identify_speakers(self, audio_data: np.ndarray, sample_rate: int, 
-                              transcript_segments: List[Dict]) -> Dict:
-        """Identify speakers in audio and map to transcript segments"""
-        await self.initialize()
-        
-        if self.pipeline is None:
-            # Fallback: assign all segments to Speaker_1
-            for segment in transcript_segments:
-                segment["speaker"] = "Speaker_1"
-            
-            return {
-                "speakers": ["Speaker_1"],
-                "speaker_segments": transcript_segments,
-                "speaker_mapping": {"Speaker_1": transcript_segments}
-            }
-        
-        try:
-            # Save audio to temporary file
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
-                with wave.open(temp_file.name, 'wb') as wav_file:
-                    wav_file.setnchannels(1)
-                    wav_file.setsampwidth(2)
-                    wav_file.setframerate(sample_rate)
-                    wav_file.writeframes(audio_data.tobytes())
-                
-                # Run speaker diarization
-                diarization = self.pipeline(temp_file.name)
-                
-                # Process diarization results
-                speaker_segments = []
-                speaker_mapping = {}
-                
-                for turn, _, speaker in diarization.itertracks(yield_label=True):
-                    speaker_segments.append({
-                        "start": turn.start,
-                        "end": turn.end,
-                        "speaker": f"Speaker_{speaker[-1]}"  # Extract number from speaker label
-                    })
-                
-                # Map speakers to transcript segments
-                for transcript_seg in transcript_segments:
-                    # Find overlapping speaker segment
-                    assigned_speaker = "Speaker_1"  # Default
-                    
-                    for speaker_seg in speaker_segments:
-                        # Check for overlap
-                        if (transcript_seg["start"] < speaker_seg["end"] and 
-                            transcript_seg["end"] > speaker_seg["start"]):
-                            assigned_speaker = speaker_seg["speaker"]
-                            break
-                    
-                    transcript_seg["speaker"] = assigned_speaker
-                    
-                    # Group by speaker
-                    if assigned_speaker not in speaker_mapping:
-                        speaker_mapping[assigned_speaker] = []
-                    speaker_mapping[assigned_speaker].append(transcript_seg)
-                
-                # Cleanup
-                os.unlink(temp_file.name)
-                
-                return {
-                    "speakers": list(speaker_mapping.keys()),
-                    "speaker_segments": transcript_segments,
-                    "speaker_mapping": speaker_mapping
-                }
-                
-        except Exception as e:
-            logger.error(f"Error in speaker identification: {e}")
-            # Fallback
-            for segment in transcript_segments:
-                segment["speaker"] = "Speaker_1"
-            
-            return {
-                "speakers": ["Speaker_1"],
-                "speaker_segments": transcript_segments,
-                "speaker_mapping": {"Speaker_1": transcript_segments}
-            }
 
 
 class EmotionDetectionService:
@@ -299,7 +188,10 @@ class JargonDetectionService:
                     self.nlp = None
                 
                 # Initialize Wikipedia API
-                self.wiki = wikipediaapi.Wikipedia('en')
+                self.wiki = wikipediaapi.Wikipedia(
+                    user_agent='AI-Meeting-Assistant/1.0 (contact@example.com)',
+                    language='en'
+                )
                 
                 logger.info("Jargon detection models loaded successfully")
             except Exception as e:
@@ -387,43 +279,40 @@ class SummarizationService:
     """Handles text summarization using BART/T5"""
     
     def __init__(self):
-        self.summarizer = None
+        self.model = None
+        self.tokenizer = None
         
     async def initialize(self):
-        """Initialize the summarization model"""
-        if self.summarizer is None:
-            try:
-                logger.info(f"Loading summarization model: {settings.SUMMARIZATION_MODEL}")
-                self.summarizer = pipeline(
-                    "summarization",
-                    model=settings.SUMMARIZATION_MODEL,
-                    device=0 if torch.cuda.is_available() and settings.ENABLE_GPU else -1
-                )
-                logger.info("Summarization model loaded successfully")
-            except Exception as e:
-                logger.error(f"Error loading summarization model: {e}")
-                self.summarizer = None
+        """Summarization disabled — skipping model load"""
+        pass
     
     async def create_micro_summary(self, text: str) -> str:
-        """Create a 1-2 line summary for a text chunk"""
-        await self.initialize()
-        
+        """Return first sentence as a simple summary (model disabled)"""
         if not text.strip():
             return "No content to summarize."
-        
+        sentences = text.split('.')
+        return (sentences[0] + '.') if sentences and len(sentences[0]) > 10 else (text[:100] + "..." if len(text) > 100 else text)
+
+    async def _create_micro_summary_model(self, text: str) -> str:
+        """(disabled) model-based micro summary"""
+        await self.initialize()
+        if not text.strip():
+            return "No content to summarize."
         try:
-            if self.summarizer and len(text) > 50:
-                # Limit input length for efficiency
-                input_text = text[:1024]
-                
-                result = self.summarizer(
-                    input_text,
-                    max_length=50,
-                    min_length=10,
-                    do_sample=False
+            if self.model and self.tokenizer and len(text) > 50:
+                inputs = self.tokenizer(
+                    text[:1024], return_tensors='pt',
+                    max_length=1024, truncation=True
                 )
-                
-                return result[0]['summary_text']
+                if torch.cuda.is_available() and settings.ENABLE_GPU:
+                    inputs = {k: v.cuda() for k, v in inputs.items()}
+                with torch.no_grad():
+                    summary_ids = self.model.generate(
+                        inputs['input_ids'],
+                        max_length=50, min_length=10,
+                        length_penalty=2.0, num_beams=4, early_stopping=True
+                    )
+                return self.tokenizer.decode(summary_ids[0], skip_special_tokens=True)
             else:
                 # Fallback: extract first sentence or truncate
                 sentences = text.split('.')
@@ -438,14 +327,19 @@ class SummarizationService:
             return text[:100] + "..." if len(text) > 100 else text
     
     async def create_full_summary(self, combined_text: str) -> str:
-        """Create a comprehensive summary from all micro-summaries"""
-        await self.initialize()
-        
+        """Return first 3 sentences as summary (model disabled)"""
         if not combined_text.strip():
             return "No content to summarize."
-        
+        sentences = [s.strip() for s in combined_text.split('.') if s.strip()]
+        return '. '.join(sentences[:3]) + '.' if sentences else combined_text[:300]
+
+    async def _create_full_summary_model(self, combined_text: str) -> str:
+        """(disabled) model-based full summary"""
+        await self.initialize()
+        if not combined_text.strip():
+            return "No content to summarize."
         try:
-            if self.summarizer:
+            if self.model and self.tokenizer:
                 # For longer text, summarize in chunks
                 max_chunk_length = 1024
                 chunks = [combined_text[i:i+max_chunk_length] 
@@ -454,25 +348,39 @@ class SummarizationService:
                 summaries = []
                 for chunk in chunks:
                     if len(chunk.strip()) > 50:
-                        result = self.summarizer(
-                            chunk,
-                            max_length=150,
-                            min_length=30,
-                            do_sample=False
+                        inputs = self.tokenizer(
+                            chunk, return_tensors='pt',
+                            max_length=1024, truncation=True
                         )
-                        summaries.append(result[0]['summary_text'])
+                        if torch.cuda.is_available() and settings.ENABLE_GPU:
+                            inputs = {k: v.cuda() for k, v in inputs.items()}
+                        with torch.no_grad():
+                            summary_ids = self.model.generate(
+                                inputs['input_ids'],
+                                max_length=150, min_length=30,
+                                length_penalty=2.0, num_beams=4, early_stopping=True
+                            )
+                        summaries.append(
+                            self.tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+                        )
                 
                 # Combine and summarize again if multiple chunks
                 if len(summaries) > 1:
                     combined_summaries = " ".join(summaries)
                     if len(combined_summaries) > 200:
-                        final_result = self.summarizer(
-                            combined_summaries,
-                            max_length=200,
-                            min_length=50,
-                            do_sample=False
+                        inputs = self.tokenizer(
+                            combined_summaries, return_tensors='pt',
+                            max_length=1024, truncation=True
                         )
-                        return final_result[0]['summary_text']
+                        if torch.cuda.is_available() and settings.ENABLE_GPU:
+                            inputs = {k: v.cuda() for k, v in inputs.items()}
+                        with torch.no_grad():
+                            final_ids = self.model.generate(
+                                inputs['input_ids'],
+                                max_length=200, min_length=50,
+                                length_penalty=2.0, num_beams=4, early_stopping=True
+                            )
+                        return self.tokenizer.decode(final_ids[0], skip_special_tokens=True)
                     else:
                         return combined_summaries
                 elif len(summaries) == 1:
@@ -493,7 +401,6 @@ class AIProcessor:
     
     def __init__(self):
         self.transcription = TranscriptionService()
-        self.speaker_id = SpeakerIdentificationService()
         self.emotion = EmotionDetectionService()
         self.jargon = JargonDetectionService()
         self.summarizer = SummarizationService()
@@ -503,10 +410,8 @@ class AIProcessor:
         logger.info("Initializing all AI services...")
         await asyncio.gather(
             self.transcription.initialize(),
-            self.speaker_id.initialize(),
             self.emotion.initialize(),
-            self.jargon.initialize(),
-            self.summarizer.initialize()
+            self.jargon.initialize()
         )
         logger.info("All AI services initialized")
     
@@ -521,10 +426,15 @@ class AIProcessor:
             # Step 1: Transcription
             transcription_result = await self.transcription.transcribe_audio(audio_data, sample_rate)
             
-            # Step 2: Speaker Identification
-            speaker_result = await self.speaker_id.identify_speakers(
-                audio_data, sample_rate, transcription_result['segments']
-            )
+            # Step 2: Speaker — label all segments as Speaker_1 (diarization removed)
+            segments = transcription_result['segments']
+            for seg in segments:
+                seg['speaker'] = 'Speaker_1'
+            speaker_result = {
+                'speakers': ['Speaker_1'],
+                'speaker_segments': segments,
+                'speaker_mapping': {'Speaker_1': segments}
+            }
             
             # Step 3: Emotion Detection
             emotions = await self.emotion.detect_emotions(speaker_result['speaker_mapping'])

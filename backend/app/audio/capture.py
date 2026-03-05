@@ -13,10 +13,7 @@ import threading
 import queue
 from loguru import logger
 
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from config import settings
+from ..config import settings
 
 
 class AudioCapture:
@@ -42,32 +39,37 @@ class AudioCapture:
         self.audio = pyaudio.PyAudio()
         self.stream = None
         
-    def find_stereo_mix_device(self) -> Optional[int]:
-        """Find the Stereo Mix audio device on Windows"""
+    def find_audio_device(self) -> Optional[int]:
+        """Find Stereo Mix device; fall back to default microphone input."""
         try:
-            # List all audio devices
             device_count = self.audio.get_device_count()
+            # Prefer Stereo Mix / loopback devices for system audio capture
             for i in range(device_count):
                 device_info = self.audio.get_device_info_by_index(i)
                 device_name = device_info.get('name', '').lower()
-                
-                # Look for Stereo Mix or similar devices
-                if any(keyword in device_name for keyword in ['stereo mix', 'stereomix', 'what u hear']):
+                if any(k in device_name for k in ['stereo mix', 'stereomix', 'what u hear', 'loopback']):
                     if device_info['maxInputChannels'] > 0:
-                        logger.info(f"Found Stereo Mix device: {device_info['name']} (Index: {i})")
+                        logger.info(f"Found system-audio device: {device_info['name']} (Index: {i})")
                         return i
-                        
-            logger.warning("Stereo Mix device not found. Available devices:")
+
+            # Fall back to first available input device (microphone)
+            logger.warning("Stereo Mix not found — falling back to default microphone input.")
             for i in range(device_count):
                 device_info = self.audio.get_device_info_by_index(i)
                 if device_info['maxInputChannels'] > 0:
-                    logger.info(f"  {i}: {device_info['name']}")
-                    
+                    logger.info(f"Using microphone fallback: {device_info['name']} (Index: {i})")
+                    return i
+
+            logger.error("No audio input devices found.")
             return None
-            
+
         except Exception as e:
-            logger.error(f"Error finding Stereo Mix device: {e}")
+            logger.error(f"Error finding audio device: {e}")
             return None
+
+    # Keep old name as alias for backward compatibility
+    def find_stereo_mix_device(self) -> Optional[int]:
+        return self.find_audio_device()
     
     def audio_callback(self, in_data, frame_count, time_info, status):
         """Callback function for audio stream"""
@@ -125,9 +127,9 @@ class AudioCapture:
     
     async def start_recording(self, save_files: bool = True) -> AsyncGenerator[dict, None]:
         """Start recording audio and yield chunks as they become available"""
-        device_index = self.find_stereo_mix_device()
+        device_index = self.find_audio_device()
         if device_index is None:
-            raise RuntimeError("Stereo Mix device not found. Please enable Stereo Mix in Windows audio settings.")
+            raise RuntimeError("No audio input device found. Please connect a microphone or enable Stereo Mix.")
         
         self.is_recording = True
         self.start_time = datetime.now()

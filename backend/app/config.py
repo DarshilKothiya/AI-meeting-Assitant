@@ -3,15 +3,23 @@ Configuration settings for the Meeting Transcription System
 """
 import os
 from typing import Optional
+from dotenv import load_dotenv, find_dotenv
+
+# Auto-search for .env in current and parent directories
+_env_path = find_dotenv(usecwd=True) or os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".env")
+)
+_loaded = load_dotenv(_env_path, override=True)
+print(f"[config] .env loaded={_loaded} path={_env_path} MONGO={os.getenv('MONGODB_URL','NOT SET')}")
 
 class Settings:
     # Server Configuration
     HOST: str = "localhost"
     PORT: int = 8000
-    DEBUG: bool = True
+    DEBUG: bool = os.getenv("DEBUG", "True").lower() == "true"
     
     # MongoDB Configuration
-    MONGODB_URL: str = "mongodb://localhost:27017"
+    MONGODB_URL: str = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
     DATABASE_NAME: str = "meeting_transcription"
     CHUNKS_COLLECTION: str = "chunks"
     SUMMARIES_COLLECTION: str = "summaries"
@@ -21,27 +29,25 @@ class Settings:
     SAMPLE_RATE: int = 16000
     CHANNELS: int = 1
     AUDIO_FORMAT: str = "wav"
-    AUDIO_DEVICE_NAME: str = "Stereo Mix"  # Windows Stereo Mix
+    AUDIO_DEVICE_NAME: str = "Stereo Mix"  # Preferred; falls back to default mic if not found
     
     # AI Model Configuration
-    WHISPER_MODEL: str = "medium"
-    WHISPER_DEVICE: str = "cpu"  # Change to "cuda" if GPU available
+    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "tiny")
+    WHISPER_DEVICE: str = os.getenv("WHISPER_DEVICE", "cpu")
     
-    # HuggingFace Models
+    # HuggingFace Model
     EMOTION_MODEL: str = "j-hartmann/emotion-english-distilroberta-base"
     SUMMARIZATION_MODEL: str = "facebook/bart-large-cnn"
-    
-    # Pyannote Configuration
-    PYANNOTE_AUTH_TOKEN: Optional[str] = None  # HuggingFace token for pyannote
     
     # Processing Configuration
     MAX_WORKERS: int = 4
     ENABLE_GPU: bool = False
     
-    # File Paths
-    BASE_DIR: str = os.path.dirname(os.path.abspath(__file__))
-    DATA_DIR: str = os.path.join(os.path.dirname(BASE_DIR), "data")
-    AUDIO_CHUNKS_DIR: str = os.path.join(DATA_DIR, "audio_chunks")
+    # File Paths  (config.py lives in backend/app/, so go up two levels to reach project root)
+    BASE_DIR: str = os.path.dirname(os.path.abspath(__file__))          # backend/app/
+    PROJECT_ROOT: str = os.path.dirname(os.path.dirname(BASE_DIR))      # project root
+    DATA_DIR: str = os.path.join(PROJECT_ROOT, "data")
+    AUDIO_CHUNKS_DIR: str = os.path.join(DATA_DIR, "audio_recordings")
     TEMP_DIR: str = os.path.join(DATA_DIR, "temp")
     
     # WebSocket Configuration
@@ -54,7 +60,7 @@ class Settings:
     
     # Logging Configuration
     LOG_LEVEL: str = "INFO"
-    LOG_FILE: str = "meeting_transcription.log"
+    LOG_FILE: str = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "meeting_transcription.log")
 
 # Global settings instance
 settings = Settings()
@@ -67,9 +73,6 @@ def load_env_settings():
     
     if os.getenv("WHISPER_DEVICE"):
         settings.WHISPER_DEVICE = os.getenv("WHISPER_DEVICE")
-    
-    if os.getenv("PYANNOTE_AUTH_TOKEN"):
-        settings.PYANNOTE_AUTH_TOKEN = os.getenv("PYANNOTE_AUTH_TOKEN")
     
     if os.getenv("DEBUG"):
         settings.DEBUG = os.getenv("DEBUG").lower() == "true"

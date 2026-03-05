@@ -27,9 +27,6 @@ sentence-transformers==2.2.2
 nltk==3.8.1
 textblob==0.17.1
 
-# Summarization Models
-torch-audio==0.13.1
-
 # Utilities
 pydantic==2.5.0
 python-dotenv==1.0.0

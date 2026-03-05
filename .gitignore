@@ -1,0 +1,42 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment
+.env
+backend/.env
+
+# Logs
+*.log
+meeting_transcription.log
+
+# Data / recordings
+data/audio_recordings/*.raw
+data/audio_recordings/*.wav
+data/transcriptions/*.txt
+
+# AI model cache
+.cache/
+huggingface/
+
+# Node / Frontend
+frontend/node_modules/
+frontend/build/
+frontend/.env.local
+frontend/.env.production
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
