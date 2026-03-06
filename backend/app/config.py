@@ -48,6 +48,7 @@ class Settings:
     PROJECT_ROOT: str = os.path.dirname(os.path.dirname(BASE_DIR))      # project root
     DATA_DIR: str = os.path.join(PROJECT_ROOT, "data")
     AUDIO_CHUNKS_DIR: str = os.path.join(DATA_DIR, "audio_recordings")
+    TRANSCRIPTIONS_DIR: str = os.path.join(DATA_DIR, "transcriptions")
     TEMP_DIR: str = os.path.join(DATA_DIR, "temp")
     
     # WebSocket Configuration

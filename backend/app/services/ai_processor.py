@@ -39,30 +39,36 @@ class TranscriptionService:
             )
             logger.info("Whisper model loaded successfully")
     
-    async def transcribe_audio(self, audio_data: np.ndarray, sample_rate: int) -> Dict:
-        """Transcribe audio data to text"""
+    async def transcribe_audio(self, audio_data: np.ndarray, sample_rate: int,
+                               source_file: Optional[str] = None) -> Dict:
+        """Transcribe audio data to text and save result to data/transcriptions/."""
         await self.initialize()
         
         try:
-            # Save audio data to temporary file for Whisper
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
-                with wave.open(temp_file.name, 'wb') as wav_file:
+            # Save audio data to a temporary WAV file for Whisper.
+            # Use delete=False so we control cleanup; close the file handle
+            # before Whisper opens it (required on Windows to avoid WinError 32).
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+                temp_path = tmp.name
+
+            try:
+                with wave.open(temp_path, 'wb') as wav_file:
                     wav_file.setnchannels(1)
                     wav_file.setsampwidth(2)  # 16-bit
                     wav_file.setframerate(sample_rate)
                     wav_file.writeframes(audio_data.tobytes())
-                
-                # Transcribe
+
+                # Transcribe (file handle is fully closed at this point)
                 segments, info = self.model.transcribe(
-                    temp_file.name,
+                    temp_path,
                     beam_size=5,
                     language="en"
                 )
-                
+
                 # Collect transcription results
                 transcript_segments = []
                 full_text = ""
-                
+
                 for segment in segments:
                     segment_dict = {
                         "start": segment.start,
@@ -72,16 +78,66 @@ class TranscriptionService:
                     }
                     transcript_segments.append(segment_dict)
                     full_text += segment.text.strip() + " "
-                
-                # Cleanup temp file
-                os.unlink(temp_file.name)
-                
-                return {
+
+                result = {
                     "full_text": full_text.strip(),
                     "segments": transcript_segments,
                     "language": info.language,
                     "language_probability": info.language_probability
                 }
+
+                # Save transcription to data/transcriptions/
+                self._save_transcription(result, source_file)
+
+                return result
+            finally:
+                # Always remove the temp file, even if transcription failed
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
+                
+        except Exception as e:
+            logger.error(f"Error in transcription: {e}")
+            return {
+                "full_text": "",
+                "segments": [],
+                "language": "en",
+                "language_probability": 0.0,
+                "error": str(e)
+            }
+
+    def _save_transcription(self, result: Dict, source_file: Optional[str]) -> None:
+        """Save transcription result as a .txt file in data/transcriptions/."""
+        try:
+            from datetime import datetime
+            transcriptions_dir = Path(settings.TRANSCRIPTIONS_DIR)
+            transcriptions_dir.mkdir(parents=True, exist_ok=True)
+
+            # Build a filename that mirrors the existing convention:
+            # {audio_stem}_whisper_{timestamp}.txt
+            audio_stem = Path(source_file).stem if source_file else "audio"
+            timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
+            out_path   = transcriptions_dir / f"{audio_stem}_whisper_{timestamp}.txt"
+
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(f"Audio File: {source_file or 'unknown'}\n")
+                f.write(f"Transcription Method: whisper_{settings.WHISPER_MODEL}\n")
+                f.write(f"Transcription Date: {datetime.now().isoformat()}\n")
+                f.write(f"Language: {result.get('language', 'en')} "
+                        f"(confidence {result.get('language_probability', 0):.2%})\n")
+                f.write("-" * 50 + "\n\n")
+                f.write(result.get("full_text", "") + "\n\n")
+
+                segments = result.get("segments", [])
+                if segments:
+                    f.write("--- Segments ---\n")
+                    for seg in segments:
+                        f.write(f"[{seg['start']:.2f}s – {seg['end']:.2f}s]  {seg['text']}\n")
+
+            logger.info(f"Transcription saved: {out_path}")
+        except Exception as e:
+            logger.warning(f"Could not save transcription file: {e}")
                 
         except Exception as e:
             logger.error(f"Error in transcription: {e}")
@@ -422,9 +478,12 @@ class AIProcessor:
             
             audio_data = chunk_data['data']
             sample_rate = chunk_data['sample_rate']
-            
+            source_file = chunk_data.get('filepath') or chunk_data.get('file_path')
+
             # Step 1: Transcription
-            transcription_result = await self.transcription.transcribe_audio(audio_data, sample_rate)
+            transcription_result = await self.transcription.transcribe_audio(
+                audio_data, sample_rate, source_file=source_file
+            )
             
             # Step 2: Speaker — label all segments as Speaker_1 (diarization removed)
             segments = transcription_result['segments']
