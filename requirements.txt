@@ -1,0 +1,53 @@
+# ========================================
+# AI Meeting Assistant - Requirements
+# ========================================
+# Installation Order: Install Core first, then AI packages separately
+# ========================================
+
+# CORE WEB FRAMEWORK (Install First)
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+websockets>=12.0
+python-multipart>=0.0.6
+pydantic>=2.5.0
+python-dotenv>=1.0.0
+loguru>=0.7.0
+
+# DATABASE (Install Second)
+motor>=3.3.0
+pymongo>=4.6.0
+
+# UTILITIES (Install Third)
+aiofiles>=23.2.0
+httpx>=0.25.0
+requests>=2.31.0
+
+# AUDIO PROCESSING (Install Fourth)
+pyaudio>=0.2.14
+sounddevice>=0.4.6
+librosa>=0.10.0
+soundfile>=0.12.0
+
+# AI/ML PACKAGES (Install Last - May require additional setup)
+# Note: These packages may need manual installation on some systems
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+
+# NLP PROCESSING
+nltk>=3.8.0
+textblob>=0.17.0
+spacy>=3.7.0
+
+# TRANSFORMERS & AI MODELS
+transformers>=4.36.0
+sentence-transformers>=2.2.0
+keybert>=0.8.0
+
+# SPEECH PROCESSING
+faster-whisper>=0.10.0
+torch>=2.1.0
+torchaudio>=2.1.0
+
+# ADDITIONAL UTILITIES
+wikipedia-api>=0.6.0

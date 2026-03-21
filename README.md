@@ -1,7 +1,7 @@
 # 🤖 AI Meeting Assistant
 
-A **Real-Time Audio Streaming System** built using **Flask WebSockets** and a **Python microphone client**.
-This system enables **live meeting recording, audio streaming, and real-time audio processing**, making it ideal for meeting assistants, transcription services, and audio analytics systems.
+A **Real-Time Audio Streaming System** built using **FastAPI WebSockets** and **Python microphone client**.
+This system enables **live meeting recording, audio streaming, and real-time AI processing**, making it ideal for meeting assistants, transcription services, and audio analytics systems.
 
 ---
 
@@ -10,8 +10,9 @@ This system enables **live meeting recording, audio streaming, and real-time aud
 * 🔊 Real-time audio streaming via WebSocket
 * 🎤 Cross-platform microphone capture using `sounddevice`
 * 💾 Automatic audio file saving with timestamps
-* 👥 Multiple client support for group meetings
-* 🧠 Ready for AI processing (speech-to-text, analysis)
+* 🧠 AI-powered transcription and analysis
+* 📝 Real-time meeting summaries
+* 🔍 Keyword and jargon detection
 * 🎛️ Audio input device selection
 * 📡 Live connection status monitoring
 
@@ -19,57 +20,155 @@ This system enables **live meeting recording, audio streaming, and real-time aud
 
 # 📋 Requirements
 
-* Python **3.7+**
+* Python **3.8+** (3.13 recommended)
 * Microphone access
 * Internet or local network connection
+* **MongoDB** (local or cloud)
 
 ---
 
 # 🛠 Installation
 
-### 1️⃣ Clone the Repository
+## ⚠️ Important Notes
+
+* **AI packages may require additional setup** on some systems
+* **Windows users**: Some packages need Microsoft Visual C++ Build Tools
+* **Installation order matters** - follow steps below carefully
+
+## 1️⃣ Clone and Setup Virtual Environment
 
 ```bash
 git clone https://github.com/DarshilKothiya/AI-meeting-Assitant.git
-cd AI-meeting-Assitant
+cd AI-meeting-Assistant
+
+# Create virtual environment
+python -m venv venv
+
+# Activate (Windows)
+venv\Scripts\activate
+
+# Activate (Linux/Mac)
+source venv/bin/activate
 ```
 
-### 2️⃣ Install Dependencies
+## 2️⃣ Install Dependencies (Step-by-Step)
+
+### Step 2.1: Core Web Framework
+```bash
+pip install fastapi uvicorn[standard] websockets python-multipart pydantic python-dotenv loguru
+```
+
+### Step 2.2: Database Packages
+```bash
+pip install motor pymongo
+```
+
+### Step 2.3: Audio Processing
+```bash
+pip install pyaudio sounddevice librosa soundfile
+```
+
+### Step 2.4: Data Processing
+```bash
+pip install numpy pandas scikit-learn
+```
+
+### Step 2.5: NLP Packages
+```bash
+pip install nltk textblob spacy
+python -m spacy download en_core_web_sm
+```
+
+### Step 2.6: AI Models (May take time)
+```bash
+pip install transformers sentence-transformers keybert
+```
+
+### Step 2.7: Speech Processing (Large packages)
+```bash
+pip install faster-whisper torch torchaudio
+```
+
+### Step 2.8: Final Utilities
+```bash
+pip install aiofiles httpx requests wikipedia-api
+```
+
+## 3️⃣ Alternative: Install All at Once
 
 ```bash
 pip install -r requirements.txt
 ```
 
+*If this fails, use the step-by-step method above*
+
+---
+
+# ⚙️ Configuration
+
+## 1️⃣ Environment Setup
+
+Create `.env` file in the `backend/` directory:
+
+```env
+# MongoDB Connection
+MONGO_URI=mongodb://localhost:27017/meeting_assistant
+# OR use MongoDB Atlas (cloud)
+# MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/meeting_assistant
+
+# Server Settings
+HOST=0.0.0.0
+PORT=8000
+DEBUG=true
+
+# AI Model Settings
+WHISPER_MODEL_SIZE=base
+TRANSCRIPTION_LANGUAGE=en
+```
+
+## 2️⃣ MongoDB Setup
+
+### Local MongoDB
+```bash
+# Install MongoDB Community Server
+# Start MongoDB service
+net start MongoDB
+```
+
+### MongoDB Atlas (Cloud)
+1. Create free account at [MongoDB Atlas](https://cloud.mongodb.com)
+2. Create free cluster
+3. Get connection string
+4. Add to `.env` file
+
 ---
 
 # ▶️ Quick Start
 
-## 1️⃣ Start the Server
+## 1️⃣ Start Backend Server
 
 ```bash
-python server.py
+cd backend
+# Make sure venv is activated
+python -m app.main
 ```
 
 Server will start on:
-
 ```
 http://localhost:8000
 ```
 
-An **audio_recordings/** folder will automatically be created to store recorded audio.
-
----
-
-## 2️⃣ Start the Client
+## 2️⃣ Start Frontend
 
 ```bash
-python client.py
+cd frontend
+npm install
+npm start
 ```
 
-Connect to a remote server:
-
-```bash
-python client.py http://SERVER_IP:8000
+Frontend will start on:
+```
+http://localhost:3000
 ```
 
 ---
@@ -77,190 +176,152 @@ python client.py http://SERVER_IP:8000
 # 📁 Project Structure
 
 ```
-AI-meeting-Assitant
+AI-meeting-Assistant/
 │
-├── server.py            # Flask WebSocket server
-├── client.py            # Python audio streaming client
-├── requirements.txt     # Project dependencies
-├── README.md            # Documentation
+├── backend/                    # FastAPI server
+│   ├── app/
+│   │   ├── main.py            # Main application
+│   │   ├── services/          # AI processing services
+│   │   ├── models/            # Database models
+│   │   └── websocket/         # WebSocket handlers
+│   ├── .env                   # Environment variables
+│   └── requirements.txt       # Backend dependencies
 │
-└── audio_recordings/    # Saved audio files
+├── frontend/                   # React frontend
+│   ├── src/
+│   ├── public/
+│   └── package.json
+│
+├── venv/                      # Virtual environment
+├── data/                      # Generated data
+│   ├── transcriptions/
+│   └── audio_chunks/
+└── README.md
 ```
-
----
-
-# ⚙️ Configuration
-
-## Server Configuration
-
-Edit `server.py` to modify settings:
-
-| Setting         | Description                       |
-| --------------- | --------------------------------- |
-| Host            | Network interface (`0.0.0.0`)     |
-| Port            | Server port (default: `8000`)     |
-| Audio Directory | Folder where recordings are saved |
-
-Example:
-
-```python
-socketio.run(app, host="0.0.0.0", port=8000)
-```
-
----
-
-## Client Audio Parameters
-
-The client supports customizable audio settings.
-
-| Parameter   | Default Value |
-| ----------- | ------------- |
-| Sample Rate | 16000 Hz      |
-| Channels    | 1 (Mono)      |
-| Block Size  | 1600          |
-
----
-
-# 🎧 Recommended Audio Settings
-
-### Meeting Recording
-
-```
-Sample rate: 16000 Hz
-Channels: 1
-Block size: 1600
-```
-
-### High Quality Recording
-
-```
-Sample rate: 44100 Hz
-Channels: 2
-Block size: 4410
-```
-
-### Low Latency Streaming
-
-```
-Sample rate: 16000 Hz
-Channels: 1
-Block size: 800
-```
-
----
-
-# 🌐 Network Usage
-
-## Local Network
-
-1. Start server on one machine
-2. Find the server IP address
-3. Connect clients:
-
-```bash
-python client.py http://SERVER_IP:8000
-```
-
----
-
-## Internet Deployment
-
-To deploy publicly:
-
-1. Deploy server on cloud (AWS, GCP, VPS)
-2. Open port **8000**
-3. Connect clients using the public IP
-
----
-
-# 🔌 WebSocket Events
-
-### Client → Server
-
-| Event           | Description          |
-| --------------- | -------------------- |
-| audio_chunk     | Sends raw audio data |
-| start_recording | Begins recording     |
-| stop_recording  | Ends recording       |
-
-### Server → Client
-
-| Event             | Description                |
-| ----------------- | -------------------------- |
-| connection_status | Connection confirmation    |
-| ack               | Audio chunk acknowledgment |
-| recording_status  | Recording updates          |
-| error             | Error messages             |
-
----
-
-# 🧠 Advanced Usage
-
-You can integrate AI features in `server.py`.
-
-### Speech-to-Text
-
-```python
-import speech_recognition as sr
-```
-
-### Audio Analysis
-
-```python
-import librosa
-```
-
-### Voice Activity Detection
-
-```python
-import webrtcvad
-```
-
-These libraries allow:
-
-* Live transcription
-* Emotion detection
-* Speaker activity detection
-* AI meeting summaries
 
 ---
 
 # 🐛 Troubleshooting
 
-### No audio device found
+## Common Installation Issues
 
-Check available devices:
+### Issue: "Microsoft Visual C++ Build Tools required"
+**Solution:**
+1. Download [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+2. Install "Desktop development with C++"
+3. Restart and retry installation
 
+### Issue: "Rust compiler required"
+**Solution:**
+```bash
+# Install Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+# Restart terminal and retry
+```
+
+### Issue: "ModuleNotFoundError: No module named 'fastapi'"
+**Solution:**
+```bash
+# Ensure venv is activated
+venv\Scripts\activate
+
+# Install packages directly with venv python
+..\venv\Scripts\python.exe -m pip install fastapi uvicorn
+```
+
+### Issue: "Port already in use"
+**Solution:**
+```bash
+# Kill process on port 8000
+netstat -ano | findstr :8000
+taskkill /PID <PID> /F
+
+# OR use different port
+# Edit .env: PORT=8001
+```
+
+### Issue: "MongoDB connection failed"
+**Solution:**
+1. Check MongoDB is running
+2. Verify connection string in `.env`
+3. Check firewall settings
+
+## Audio Issues
+
+### Issue: "No audio device found"
 ```bash
 python -c "import sounddevice; print(sounddevice.query_devices())"
 ```
 
----
-
-### Connection refused
-
-* Ensure server is running
-* Check firewall settings
-* Verify correct IP and port
+### Issue: "Permission denied"
+- Run as administrator
+- Check microphone permissions in system settings
 
 ---
 
-### Audio quality issues
+# 🎧 Recommended Settings
 
-* Increase sample rate
-* Increase block size
-* Use a better microphone
+### Meeting Recording
+```
+Sample rate: 16000 Hz
+Channels: 1 (Mono)
+Chunk duration: 15 seconds
+```
+
+### High Quality Recording
+```
+Sample rate: 44100 Hz
+Channels: 2 (Stereo)
+Chunk duration: 30 seconds
+```
 
 ---
 
-# 📊 Performance Tips
+# 🌐 API Endpoints
 
-| Goal            | Recommendation                |
-| --------------- | ----------------------------- |
-| Lower latency   | Reduce block size             |
-| Lower CPU usage | Increase block size           |
-| Better quality  | Increase sample rate          |
-| Better network  | Compress audio before sending |
+## WebSocket Connection
+```
+ws://localhost:8000/ws/{session_id}
+```
+
+## REST API
+```
+GET  /api/health              # Health check
+GET  /api/sessions           # List sessions
+POST /api/sessions           # Create session
+GET  /api/sessions/{id}      # Get session details
+DELETE /api/sessions/{id}    # Delete session
+```
+
+---
+
+# 🧠 AI Features
+
+## Speech-to-Text
+- Uses **Faster Whisper** for transcription
+- Supports multiple languages
+- Real-time processing
+
+## Meeting Analysis
+- **Keyword extraction** using KeyBERT
+- **Jargon detection** with custom models
+- **Summary generation** using transformers
+
+## Audio Processing
+- **Voice activity detection**
+- **Audio quality enhancement**
+- **Noise reduction**
+
+---
+
+# 📊 Performance Optimization
+
+| Goal                | Recommendation                  |
+| ------------------- | ------------------------------- |
+| Lower latency       | Reduce chunk size to 10s        |
+| Better accuracy     | Use larger Whisper model        |
+| Lower memory usage  | Use `base` or `small` models    |
+| Faster processing   | Enable GPU (if available)       |
 
 ---
 
@@ -268,20 +329,22 @@ python -c "import sounddevice; print(sounddevice.query_devices())"
 
 For production deployment:
 
-* Use **HTTPS / WSS**
-* Add **authentication**
-* Configure **firewall rules**
-* Encrypt audio streams
+* Use **HTTPS/WSS** instead of HTTP/WS
+* Add **authentication** middleware
+* Configure **CORS** properly
+* Use **environment variables** for secrets
+* Set up **rate limiting**
+* Enable **input validation**
 
 ---
 
 # 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Open a Pull Request
+2. Create feature branch: `git checkout -b feature-name`
+3. Commit changes: `git commit -m "Add feature"`
+4. Push to branch: `git push origin feature-name`
+5. Open Pull Request
 
 ---
 
@@ -298,7 +361,8 @@ If you like this project:
 * ⭐ Star the repository
 * 🍴 Fork it
 * 🧠 Contribute improvements
+* 🐛 Report issues
 
 ---
 
-**Happy Streaming 🎵**
+**Happy Meeting Assistant! 🎵🤖**
