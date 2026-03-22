@@ -93,7 +93,7 @@ const Sidebar = ({ emotions, speakers, technicalTerms, sessionStats }) => {
             <span className="stat-value">
               {sessionStats?.totalDuration ? 
                 Math.floor(sessionStats.totalDuration / 60) + ':' + 
-                String(sessionStats.totalDuration % 60).padStart(2, '0') 
+                String(Math.floor(sessionStats.totalDuration % 60)).padStart(2, '0') 
                 : '0:00'}
             </span>
           </div>
