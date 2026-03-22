@@ -11,13 +11,9 @@
     "react-scripts": "5.0.1",
     "web-vitals": "^2.1.4",
     "axios": "^1.2.2",
-    "@emotion/react": "^11.10.5",
-    "@emotion/styled": "^11.10.5",
-    "@mui/material": "^5.11.4",
-    "@mui/icons-material": "^5.11.0",
+    "react-router-dom": "^6.6.2",
     "recharts": "^2.5.0",
-    "moment": "^2.29.4",
-    "react-router-dom": "^6.6.2"
+    "moment": "^2.29.4"
   },
   "scripts": {
     "start": "react-scripts start",

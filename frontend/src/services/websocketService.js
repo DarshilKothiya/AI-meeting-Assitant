@@ -18,6 +18,9 @@ class WebSocketService {
     this.onChunkUpdateHandler = null;
     this.onSummaryUpdateHandler = null;
     this.onStatusUpdateHandler = null;
+    this.onEmotionUpdateHandler = null;
+    this.onSpeakerUpdateHandler = null;
+    this.onTechnicalTermsUpdateHandler = null;
     this.onErrorHandler = null;
   }
 
@@ -96,6 +99,24 @@ class WebSocketService {
         this.onStatusUpdateHandler?.(message.session_id, message.status, message.details);
         break;
 
+      case 'emotion_update':
+        if (message.session_id && message.emotions) {
+          this.onEmotionUpdateHandler?.(message.session_id, message.emotions);
+        }
+        break;
+
+      case 'speaker_update':
+        if (message.session_id && message.speakers) {
+          this.onSpeakerUpdateHandler?.(message.session_id, message.speakers);
+        }
+        break;
+
+      case 'technical_terms_update':
+        if (message.session_id && message.technical_terms) {
+          this.onTechnicalTermsUpdateHandler?.(message.session_id, message.technical_terms);
+        }
+        break;
+
       case 'heartbeat':
         // Respond to server heartbeat
         this.send({ type: 'heartbeat' });
@@ -153,6 +174,9 @@ class WebSocketService {
   onChunkUpdate(handler) { this.onChunkUpdateHandler = handler; }
   onSummaryUpdate(handler) { this.onSummaryUpdateHandler = handler; }
   onStatusUpdate(handler) { this.onStatusUpdateHandler = handler; }
+  onEmotionUpdate(handler) { this.onEmotionUpdateHandler = handler; }
+  onSpeakerUpdate(handler) { this.onSpeakerUpdateHandler = handler; }
+  onTechnicalTermsUpdate(handler) { this.onTechnicalTermsUpdateHandler = handler; }
   onError(handler) { this.onErrorHandler = handler; }
 
   isConnected() {
