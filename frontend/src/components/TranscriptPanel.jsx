@@ -1,5 +1,4 @@
 import React, { useRef, useEffect } from 'react';
-import moment from 'moment';
 
 const TranscriptPanel = ({ chunks, error }) => {
   const chunksEndRef = useRef(null);
@@ -11,6 +10,39 @@ const TranscriptPanel = ({ chunks, error }) => {
   useEffect(() => {
     scrollToBottom();
   }, [chunks]);
+
+  const formatTime = (seconds) => {
+    if (seconds == null || isNaN(seconds)) return '00:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
+  /**
+   * Safely extract the transcript text from a chunk.
+   * The backend sends chunks as ProcessedChunk objects where the text lives at
+   * `chunk.transcript.full_text`.  We also fall back to legacy `chunk.text`
+   * for any older/simplified payloads.
+   */
+  const getChunkText = (chunk) => {
+    if (chunk.transcript && chunk.transcript.full_text) {
+      return chunk.transcript.full_text;
+    }
+    if (typeof chunk.text === 'string') {
+      return chunk.text;
+    }
+    return '';
+  };
+
+  /**
+   * Extract speaker labels from a chunk (if available).
+   */
+  const getSpeakers = (chunk) => {
+    if (chunk.speakers && Array.isArray(chunk.speakers.speakers)) {
+      return chunk.speakers.speakers;
+    }
+    return [];
+  };
 
   return (
     <div className="transcript-panel">
@@ -39,16 +71,32 @@ const TranscriptPanel = ({ chunks, error }) => {
             No transcript available. Start a session to begin recording.
           </div>
         ) : (
-          chunks.map((chunk, index) => (
-            <div key={chunk.chunk_id || index} className="transcript-chunk">
-              <div className="chunk-timestamp">
-                {moment(chunk.start_time * 1000).format('HH:mm:ss')} - {moment(chunk.end_time * 1000).format('HH:mm:ss')}
+          chunks.map((chunk, index) => {
+            const text = getChunkText(chunk);
+            const speakers = getSpeakers(chunk);
+            return (
+              <div key={chunk.chunk_id ?? index} className="transcript-chunk">
+                <div className="chunk-meta">
+                  <span className="chunk-timestamp">
+                    {formatTime(chunk.start_time)} – {formatTime(chunk.end_time)}
+                  </span>
+                  {speakers.length > 0 && (
+                    <span className="chunk-speakers">
+                      {speakers.join(', ')}
+                    </span>
+                  )}
+                </div>
+                <div className="chunk-text">
+                  {text || <em style={{ opacity: 0.5 }}>No speech detected</em>}
+                </div>
+                {chunk.micro_summary && (
+                  <div className="chunk-summary">
+                    Summary: {chunk.micro_summary}
+                  </div>
+                )}
               </div>
-              <div className="chunk-text">
-                {chunk.text}
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
         <div ref={chunksEndRef} />
       </div>

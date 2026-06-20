@@ -138,17 +138,6 @@ class TranscriptionService:
             logger.info(f"Transcription saved: {out_path}")
         except Exception as e:
             logger.warning(f"Could not save transcription file: {e}")
-                
-        except Exception as e:
-            logger.error(f"Error in transcription: {e}")
-            return {
-                "full_text": "",
-                "segments": [],
-                "language": "en",
-                "language_probability": 0.0,
-                "error": str(e)
-            }
-
 
 
 class EmotionDetectionService:
@@ -269,7 +258,7 @@ class JargonDetectionService:
                     full_text, 
                     keyphrase_ngram_range=(1, 3),
                     stop_words='english',
-                    top_k=settings.MAX_JARGON_TERMS,
+                    top_n=settings.MAX_JARGON_TERMS,
                     use_mmr=True,
                     diversity=0.5
                 )

@@ -107,6 +107,12 @@ class DatabaseConnection:
 db = DatabaseConnection()
 
 
+# In-memory storage fallback when database is not connected
+_in_memory_chunks = {}      # session_id -> list of chunk dicts
+_in_memory_summaries = {}   # session_id -> summary dict
+_in_memory_sessions = {}    # session_id -> session dict
+
+
 class ChunkOperations:
     """Database operations for audio chunks"""
     
@@ -114,8 +120,37 @@ class ChunkOperations:
     async def save_chunk(session_id: str, chunk_data: Dict) -> bool:
         """Save processed chunk data to database"""
         if not db.is_connected():
-            logger.warning("Database not connected, skipping chunk save")
-            return False
+            logger.info(f"[In-Memory] Saving chunk {chunk_data['chunk_id']} for session {session_id}")
+            if session_id not in _in_memory_chunks:
+                _in_memory_chunks[session_id] = []
+            
+            # Prepare document for storage (in-memory)
+            document = {
+                "_id": chunk_data.get("_id") or f"mem_{session_id}_{chunk_data['chunk_id']}",
+                "session_id": session_id,
+                "chunk_id": chunk_data["chunk_id"],
+                "timestamp": chunk_data["timestamp"],
+                "start_time": chunk_data["start_time"],
+                "end_time": chunk_data["end_time"],
+                "duration": chunk_data["duration"],
+                "transcript": chunk_data["transcript"],
+                "speakers": chunk_data["speakers"],
+                "emotions": chunk_data["emotions"],
+                "jargon": chunk_data["jargon"],
+                "micro_summary": chunk_data["micro_summary"],
+                "processing_status": chunk_data["processing_status"],
+                "created_at": datetime.utcnow()
+            }
+            
+            # Replace existing if exists, otherwise append
+            chunks = _in_memory_chunks[session_id]
+            for idx, c in enumerate(chunks):
+                if c["chunk_id"] == chunk_data["chunk_id"]:
+                    chunks[idx] = document
+                    break
+            else:
+                chunks.append(document)
+            return True
         
         try:
             # Prepare document for storage
@@ -153,7 +188,11 @@ class ChunkOperations:
     async def get_chunks_for_session(session_id: str) -> List[Dict]:
         """Retrieve all chunks for a session"""
         if not db.is_connected():
-            return []
+            chunks = _in_memory_chunks.get(session_id, [])
+            # Return copies to prevent in-place mutation issues
+            import copy
+            sorted_chunks = sorted(copy.deepcopy(chunks), key=lambda x: x["chunk_id"])
+            return sorted_chunks
         
         try:
             cursor = db.chunks_collection.find(
@@ -176,7 +215,13 @@ class ChunkOperations:
     async def get_latest_chunks(limit: int = 10) -> List[Dict]:
         """Get the most recent chunks across all sessions"""
         if not db.is_connected():
-            return []
+            all_chunks = []
+            for chunks in _in_memory_chunks.values():
+                all_chunks.extend(chunks)
+            # Sort by timestamp descending
+            import copy
+            sorted_chunks = sorted(copy.deepcopy(all_chunks), key=lambda x: x["timestamp"], reverse=True)
+            return sorted_chunks[:limit]
         
         try:
             cursor = db.chunks_collection.find().sort("timestamp", -1).limit(limit)
@@ -191,8 +236,8 @@ class ChunkOperations:
         except Exception as e:
             logger.error(f"Error retrieving latest chunks: {e}")
             return []
-
-
+ 
+ 
 class SummaryOperations:
     """Database operations for meeting summaries"""
     
@@ -200,8 +245,23 @@ class SummaryOperations:
     async def save_summary(session_id: str, summary_data: Dict) -> bool:
         """Save final meeting summary to database"""
         if not db.is_connected():
-            logger.warning("Database not connected, skipping summary save")
-            return False
+            logger.info(f"[In-Memory] Saving summary for session {session_id}")
+            document = {
+                "_id": f"mem_summary_{session_id}",
+                "session_id": session_id,
+                "timestamp": datetime.utcnow(),
+                "combined_transcript": summary_data.get("combined_transcript", ""),
+                "final_summary": summary_data.get("final_summary", ""),
+                "speakers_summary": summary_data.get("speakers_summary", {}),
+                "emotions_summary": summary_data.get("emotions_summary", {}),
+                "jargon_summary": summary_data.get("jargon_summary", []),
+                "total_chunks": summary_data.get("total_chunks", 0),
+                "total_duration": summary_data.get("total_duration", 0),
+                "meeting_metadata": summary_data.get("meeting_metadata", {}),
+                "created_at": datetime.utcnow()
+            }
+            _in_memory_summaries[session_id] = document
+            return True
         
         try:
             document = {
@@ -236,7 +296,9 @@ class SummaryOperations:
     async def get_summary(session_id: str) -> Optional[Dict]:
         """Retrieve summary for a session"""
         if not db.is_connected():
-            return None
+            import copy
+            summary = _in_memory_summaries.get(session_id)
+            return copy.deepcopy(summary) if summary else None
         
         try:
             summary = await db.summaries_collection.find_one({"session_id": session_id})
@@ -254,7 +316,10 @@ class SummaryOperations:
     async def get_all_summaries(limit: int = 50) -> List[Dict]:
         """Get all meeting summaries"""
         if not db.is_connected():
-            return []
+            import copy
+            all_summaries = list(_in_memory_summaries.values())
+            sorted_summaries = sorted(copy.deepcopy(all_summaries), key=lambda x: x["timestamp"], reverse=True)
+            return sorted_summaries[:limit]
         
         try:
             cursor = db.summaries_collection.find().sort("timestamp", -1).limit(limit)
@@ -269,8 +334,8 @@ class SummaryOperations:
         except Exception as e:
             logger.error(f"Error retrieving summaries: {e}")
             return []
-
-
+ 
+ 
 class SessionOperations:
     """Database operations for session management"""
     
@@ -278,8 +343,17 @@ class SessionOperations:
     async def create_session(session_id: str, metadata: Optional[Dict] = None) -> bool:
         """Create a new session"""
         if not db.is_connected():
-            logger.warning("Database not connected, skipping session creation")
-            return False
+            logger.info(f"[In-Memory] Creating session {session_id}")
+            document = {
+                "_id": f"mem_session_{session_id}",
+                "session_id": session_id,
+                "start_time": datetime.utcnow(),
+                "status": "active",
+                "metadata": metadata or {},
+                "created_at": datetime.utcnow()
+            }
+            _in_memory_sessions[session_id] = document
+            return True
         
         try:
             document = {
@@ -302,6 +376,14 @@ class SessionOperations:
     async def end_session(session_id: str, summary_stats: Optional[Dict] = None) -> bool:
         """Mark a session as completed"""
         if not db.is_connected():
+            logger.info(f"[In-Memory] Ending session {session_id}")
+            if session_id in _in_memory_sessions:
+                _in_memory_sessions[session_id]["status"] = "completed"
+                _in_memory_sessions[session_id]["end_time"] = datetime.utcnow()
+                _in_memory_sessions[session_id]["updated_at"] = datetime.utcnow()
+                if summary_stats:
+                    _in_memory_sessions[session_id]["summary_stats"] = summary_stats
+                return True
             return False
         
         try:
@@ -330,7 +412,10 @@ class SessionOperations:
     async def get_active_sessions() -> List[Dict]:
         """Get all active sessions"""
         if not db.is_connected():
-            return []
+            import copy
+            active = [copy.deepcopy(s) for s in _in_memory_sessions.values() if s.get("status") == "active"]
+            sorted_active = sorted(active, key=lambda x: x["start_time"], reverse=True)
+            return sorted_active
         
         try:
             cursor = db.sessions_collection.find({"status": "active"}).sort("start_time", -1)
@@ -345,14 +430,14 @@ class SessionOperations:
         except Exception as e:
             logger.error(f"Error retrieving active sessions: {e}")
             return []
-
-
+ 
+ 
 # Initialize database connection
 async def initialize_database():
     """Initialize database connection"""
     await db.connect()
-
-
+ 
+ 
 # Cleanup function
 async def cleanup_database():
     """Cleanup database connection"""

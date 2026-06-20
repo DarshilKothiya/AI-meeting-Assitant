@@ -5,6 +5,77 @@ import Sidebar from './Sidebar';
 import { webSocketService } from '../services/websocketService';
 import { apiService } from '../services/apiService';
 
+/**
+ * Derive sidebar-friendly emotion data from the accumulated chunks.
+ * The backend sends emotions per speaker per chunk as:
+ *   chunk.emotions = { "Speaker_1": { dominant_emotion, confidence, all_emotions } }
+ *
+ * We aggregate dominant_emotion counts across all chunks and convert to percentages.
+ */
+const deriveEmotions = (chunks) => {
+  const counts = {};
+  let total = 0;
+
+  chunks.forEach((chunk) => {
+    if (chunk.emotions && typeof chunk.emotions === 'object') {
+      Object.values(chunk.emotions).forEach((emotionData) => {
+        const emotion = emotionData?.dominant_emotion;
+        if (emotion) {
+          counts[emotion] = (counts[emotion] || 0) + 1;
+          total += 1;
+        }
+      });
+    }
+  });
+
+  return Object.entries(counts).map(([name, count]) => ({
+    name,
+    percentage: total > 0 ? Math.round((count / total) * 100) : 0,
+  }));
+};
+
+/**
+ * Derive sidebar-friendly speaker data from accumulated chunks.
+ * Count how many chunks each speaker appears in.
+ */
+const deriveSpeakers = (chunks) => {
+  const counts = {};
+
+  chunks.forEach((chunk) => {
+    if (chunk.speakers && Array.isArray(chunk.speakers.speakers)) {
+      chunk.speakers.speakers.forEach((speaker) => {
+        counts[speaker] = (counts[speaker] || 0) + 1;
+      });
+    }
+  });
+
+  return Object.entries(counts).map(([name, count]) => ({ name, count }));
+};
+
+/**
+ * Derive sidebar-friendly technical-terms data from accumulated chunks.
+ * Deduplicate by term (case-insensitive) and track frequency.
+ */
+const deriveTerms = (chunks) => {
+  const map = {};
+
+  chunks.forEach((chunk) => {
+    if (Array.isArray(chunk.jargon)) {
+      chunk.jargon.forEach((j) => {
+        const key = (j.term || '').toLowerCase();
+        if (key) {
+          if (!map[key]) {
+            map[key] = { term: j.term, frequency: 0, definition: j.definition || '' };
+          }
+          map[key].frequency += 1;
+        }
+      });
+    }
+  });
+
+  return Object.values(map).sort((a, b) => b.frequency - a.frequency);
+};
+
 const Dashboard = () => {
   const [state, setState] = useState({
     isConnected: false,
@@ -44,15 +115,34 @@ const Dashboard = () => {
           console.log('Received chunk update:', { sessionId, chunk });
           setState(prev => {
             if (sessionId === prev.currentSession) {
+              const newChunks = [...prev.chunks, chunk];
               return {
                 ...prev,
-                chunks: [...prev.chunks, chunk],
+                chunks: newChunks,
                 sessionStats: {
                   ...prev.sessionStats,
                   totalChunks: prev.sessionStats.totalChunks + 1,
                   currentChunk: chunk.chunk_id,
                   totalDuration: chunk.end_time,
                 },
+                // Re-derive sidebar data from accumulated chunks
+                emotions: deriveEmotions(newChunks),
+                speakers: deriveSpeakers(newChunks),
+                technicalTerms: deriveTerms(newChunks),
+              };
+            }
+            return prev;
+          });
+        });
+
+        webSocketService.onSummaryUpdate((sessionId, summary) => {
+          console.log('Received summary update:', { sessionId, summary });
+          setState(prev => {
+            if (sessionId === prev.currentSession) {
+              return {
+                ...prev,
+                finalSummary: summary,
+                sessionStatus: 'completed',
               };
             }
             return prev;
@@ -90,7 +180,7 @@ const Dashboard = () => {
         });
 
         webSocketService.onError((error) => {
-          setState(prev => ({ ...prev, error: error.message }));
+          setState(prev => ({ ...prev, error: typeof error === 'string' ? error : error?.message || 'Unknown error' }));
         });
 
       } catch (error) {
@@ -126,6 +216,9 @@ const Dashboard = () => {
           totalDuration: 0,
           currentChunk: 0,
         },
+        emotions: [],
+        speakers: [],
+        technicalTerms: [],
       }));
 
       // Subscribe to WebSocket session for real-time updates
