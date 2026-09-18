@@ -76,6 +76,33 @@ class ApiService {
     return response.data;
   }
 
+  async getAllMeetings(limit = 50) {
+    const response = await api.get(`/meetings?limit=${limit}`);
+    return response.data;
+  }
+
+  async getMeetingDetails(meetingId) {
+    const response = await api.get(`/meetings/${meetingId}`);
+    return response.data;
+  }
+
+  async generateMeetingSummary(meetingId, forceRegenerate = false) {
+    const response = await api.post(`/meetings/${meetingId}/summary`, {
+      force_regenerate: forceRegenerate,
+    });
+    return response.data;
+  }
+
+  async getMeetingSummary(meetingId) {
+    const response = await api.get(`/meetings/${meetingId}/summary`);
+    return response.data;
+  }
+
+  async getAllActionItems(limit = 50) {
+    const response = await api.get(`/action-items?limit=${limit}`);
+    return response.data;
+  }
+
   async checkConnection() {
     try {
       await api.get('/health');
@@ -103,5 +130,6 @@ class ApiService {
     return false;
   }
 }
+
 
 export const apiService = new ApiService();

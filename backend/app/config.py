@@ -35,6 +35,12 @@ class Settings:
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "tiny")
     WHISPER_DEVICE: str = os.getenv("WHISPER_DEVICE", "cpu")
     
+    # Groq & LangChain Summarization Configuration
+    GROQ_API_KEY: Optional[str] = os.getenv("GROQ_API_KEY", None)
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+    SUMMARY_CHUNK_SIZE: int = int(os.getenv("SUMMARY_CHUNK_SIZE", "6000"))  # characters for chunking long transcripts
+    SUMMARY_CHUNK_OVERLAP: int = int(os.getenv("SUMMARY_CHUNK_OVERLAP", "500"))
+    
     # HuggingFace Model
     EMOTION_MODEL: str = "j-hartmann/emotion-english-distilroberta-base"
     SUMMARIZATION_MODEL: str = "facebook/bart-large-cnn"
@@ -74,6 +80,12 @@ def load_env_settings():
     
     if os.getenv("WHISPER_DEVICE"):
         settings.WHISPER_DEVICE = os.getenv("WHISPER_DEVICE")
+    
+    if os.getenv("GROQ_API_KEY"):
+        settings.GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+        
+    if os.getenv("GROQ_MODEL"):
+        settings.GROQ_MODEL = os.getenv("GROQ_MODEL")
     
     if os.getenv("DEBUG"):
         settings.DEBUG = os.getenv("DEBUG").lower() == "true"

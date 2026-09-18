@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 
-const TranscriptPanel = ({ chunks, error }) => {
+const TranscriptPanel = ({ chunks, error, isLive = false }) => {
   const chunksEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -18,12 +18,6 @@ const TranscriptPanel = ({ chunks, error }) => {
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
-  /**
-   * Safely extract the transcript text from a chunk.
-   * The backend sends chunks as ProcessedChunk objects where the text lives at
-   * `chunk.transcript.full_text`.  We also fall back to legacy `chunk.text`
-   * for any older/simplified payloads.
-   */
   const getChunkText = (chunk) => {
     if (chunk.transcript && chunk.transcript.full_text) {
       return chunk.transcript.full_text;
@@ -34,9 +28,6 @@ const TranscriptPanel = ({ chunks, error }) => {
     return '';
   };
 
-  /**
-   * Extract speaker labels from a chunk (if available).
-   */
   const getSpeakers = (chunk) => {
     if (chunk.speakers && Array.isArray(chunk.speakers.speakers)) {
       return chunk.speakers.speakers;
@@ -45,53 +36,82 @@ const TranscriptPanel = ({ chunks, error }) => {
   };
 
   return (
-    <div className="transcript-panel">
-      <div className="transcript-header">
-        Live Transcript
+    <div className="card transcript-container">
+      <div className="card-header">
+        <div className="card-title">
+          <span>🎙️</span>
+          <span>{isLive ? 'Real-Time Live Transcript' : 'Meeting Transcript'}</span>
+          {isLive && (
+            <span style={{ 
+              display: 'inline-flex', 
+              alignItems: 'center', 
+              gap: '0.4rem', 
+              fontSize: '0.75rem', 
+              color: 'var(--ai-rose)',
+              fontWeight: 600 
+            }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--ai-rose)', animation: 'record-pulse 1.5s infinite' }} />
+              STREAMING
+            </span>
+          )}
+        </div>
+
+        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          {chunks.length} chunks processed
+        </span>
       </div>
-      
-      <div className="transcript-content">
+
+      <div className="transcript-scroll">
         {error && (
-          <div className="error-toast">
-            <svg className="error-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
-            </svg>
-            <div className="error-content">
-              <div className="error-title">Connection Error</div>
-              <div className="error-message">{error}</div>
-            </div>
-            <button className="error-close" onClick={() => {}}>
-              ×
-            </button>
+          <div style={{
+            padding: '0.85rem 1rem',
+            backgroundColor: 'rgba(239, 68, 68, 0.15)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: 'var(--radius-md)',
+            color: '#FCA5A5',
+            fontSize: '0.875rem'
+          }}>
+            ⚠️ {error}
           </div>
         )}
-        
+
         {chunks.length === 0 ? (
-          <div className="empty-state">
-            No transcript available. Start a session to begin recording.
+          <div className="empty-state" style={{ height: '100%', border: 'none' }}>
+            <div className="empty-icon">🎙️</div>
+            <div className="empty-title">Waiting for Speech...</div>
+            <p className="empty-desc">
+              Start a meeting session to begin streaming live audio chunks and speech-to-text transcription.
+            </p>
           </div>
         ) : (
           chunks.map((chunk, index) => {
             const text = getChunkText(chunk);
             const speakers = getSpeakers(chunk);
             return (
-              <div key={chunk.chunk_id ?? index} className="transcript-chunk">
-                <div className="chunk-meta">
-                  <span className="chunk-timestamp">
-                    {formatTime(chunk.start_time)} – {formatTime(chunk.end_time)}
-                  </span>
-                  {speakers.length > 0 && (
-                    <span className="chunk-speakers">
-                      {speakers.join(', ')}
+              <div key={chunk.chunk_id ?? index} className="transcript-bubble">
+                <div className="bubble-meta">
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <span className="timestamp-tag">
+                      {formatTime(chunk.start_time)} – {formatTime(chunk.end_time)}
                     </span>
-                  )}
+                    {speakers.length > 0 && (
+                      <span className="speaker-tag">
+                        👤 {speakers.join(', ')}
+                      </span>
+                    )}
+                  </div>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                    Chunk #{chunk.chunk_id ?? index + 1}
+                  </span>
                 </div>
-                <div className="chunk-text">
-                  {text || <em style={{ opacity: 0.5 }}>No speech detected</em>}
+
+                <div className="bubble-text">
+                  {text || <em style={{ opacity: 0.5 }}>No speech detected in this chunk</em>}
                 </div>
+
                 {chunk.micro_summary && (
-                  <div className="chunk-summary">
-                    Summary: {chunk.micro_summary}
+                  <div className="bubble-summary">
+                    💡 Summary: {chunk.micro_summary}
                   </div>
                 )}
               </div>

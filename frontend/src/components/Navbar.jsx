@@ -1,41 +1,71 @@
 import React from 'react';
 
-const Navbar = ({ isConnected, onStartSession, onStopSession, sessionStatus }) => {
+const Navbar = ({ 
+  sessionStatus, 
+  onStartSession, 
+  onStopSession, 
+  onToggleSidebar, 
+  audioDevices, 
+  selectedDevice, 
+  onSelectDevice,
+  activeSessionName 
+}) => {
+  const isRecording = sessionStatus === 'recording';
+
   return (
-    <nav className="navbar">
-      <div className="navbar-title">
-        Meeting Transcription Dashboard
-      </div>
-      
-      <div className="navbar-actions">
-        <div className={`status-badge ${isConnected ? 'connected' : ''}`}>
-          <div className="status-dot"></div>
-          {isConnected ? 'Connected' : 'Disconnected'}
-        </div>
-        
+    <header className="top-navbar">
+      <div className="navbar-left">
         <button 
-          className={`start-session-btn ${sessionStatus === 'recording' ? 'active' : ''}`}
-          onClick={sessionStatus === 'recording' ? onStopSession : onStartSession}
+          className="mobile-nav-toggle" 
+          onClick={onToggleSidebar}
+          aria-label="Toggle navigation"
         >
-          {sessionStatus === 'recording' ? (
+          ☰
+        </button>
+
+        <div className="page-heading">
+          {isRecording ? (
             <>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <rect x="6" y="4" width="4" height="16" />
-                <rect x="14" y="4" width="4" height="16" />
-              </svg>
-              Stop Session
+              <span style={{ color: 'var(--ai-rose)', animation: 'record-pulse 1.5s infinite' }}>●</span>
+              <span>Recording: {activeSessionName || 'Live Session'}</span>
             </>
           ) : (
-            <>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M8 5v14l11-7z"/>
-              </svg>
-              Start Session
-            </>
+            <span>Meeting Intelligence Platform</span>
           )}
-        </button>
+        </div>
       </div>
-    </nav>
+
+      <div className="navbar-right">
+        {/* Device selector if available */}
+        {audioDevices && audioDevices.length > 0 && !isRecording && (
+          <select 
+            className="form-input" 
+            style={{ padding: '0.4rem 0.65rem', fontSize: '0.8rem', width: 'auto', minWidth: '150px' }}
+            value={selectedDevice}
+            onChange={(e) => onSelectDevice && onSelectDevice(e.target.value)}
+          >
+            {audioDevices.map(dev => (
+              <option key={dev.device_id} value={dev.device_id}>
+                🎤 {dev.name}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {/* Start / Stop Session Button */}
+        {isRecording ? (
+          <button className="btn btn-record" onClick={onStopSession}>
+            <span style={{ fontSize: '0.8rem' }}>⏹</span>
+            Stop & Finish Session
+          </button>
+        ) : (
+          <button className="btn btn-record-start" onClick={onStartSession}>
+            <span>🎙️</span>
+            Start Live Meeting
+          </button>
+        )}
+      </div>
+    </header>
   );
 };
 

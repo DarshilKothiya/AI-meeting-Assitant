@@ -189,3 +189,105 @@ class HeartbeatMessage(WebSocketMessage):
     """Heartbeat message for connection maintenance"""
     type: str = Field(default="heartbeat", description="Message type")
     server_time: datetime = Field(default_factory=datetime.utcnow, description="Server timestamp")
+
+
+# ============================================================================
+# LLM Structured Meeting Summary Schemas (Groq + LangChain)
+# ============================================================================
+
+class ActionItem(BaseModel):
+    """Individual action item extracted from meeting transcript"""
+    task: str = Field(..., description="Actionable task or deliverable")
+    assignee: Optional[str] = Field(default="Not mentioned", description="Person responsible, or 'Not mentioned'")
+    deadline: Optional[str] = Field(default="Not mentioned", description="Explicit deadline or due date, or 'Not mentioned'")
+    status: Optional[str] = Field(default="Pending", description="Status (Pending, In Progress, Completed, or 'Not mentioned')")
+
+
+class StructuredSummary(BaseModel):
+    """Complete structured meeting intelligence summary"""
+    meeting_overview: str = Field(
+        ..., 
+        description="Comprehensive overview of the meeting background, goals, and context"
+    )
+    executive_summary: str = Field(
+        ..., 
+        description="Clear, executive-ready narrative summarizing discussions, progress, and outcomes"
+    )
+    key_points: List[str] = Field(
+        default_factory=list, 
+        description="List of primary discussion points and takeaways"
+    )
+    decisions_made: List[str] = Field(
+        default_factory=list, 
+        description="Explicit decisions, approvals, or strategic directions agreed upon"
+    )
+    action_items: List[ActionItem] = Field(
+        default_factory=list, 
+        description="Action items extracted with assignees and deadlines"
+    )
+    questions_and_issues: List[str] = Field(
+        default_factory=list, 
+        description="Open questions, risks, blockers, or unresolved issues raised"
+    )
+    key_topics: List[str] = Field(
+        default_factory=list, 
+        description="Major topics, concepts, or technical terms addressed"
+    )
+    participants: List[str] = Field(
+        default_factory=list, 
+        description="List of identified speakers or participants ('Not mentioned' if unknown)"
+    )
+    follow_up_items: List[str] = Field(
+        default_factory=list, 
+        description="Follow-up meetings, syncs, or items scheduled"
+    )
+    concise_summary: str = Field(
+        ..., 
+        description="Punchy, informative 1-2 sentence quick summary of the meeting"
+    )
+
+
+class MeetingSummaryResponse(BaseModel):
+    """Response payload for meeting summary API"""
+    session_id: str = Field(..., description="Session identifier")
+    summary: StructuredSummary = Field(..., description="Structured summary data")
+    generated_at: datetime = Field(..., description="Timestamp of summary generation")
+    summary_version: str = Field(default="1.0.0", description="Summary schema version")
+    model_used: str = Field(..., description="Name of LLM model used")
+    is_cached: bool = Field(default=False, description="True if retrieved from database cache")
+    total_chunks: int = Field(default=0, description="Total chunks processed")
+    total_duration: float = Field(default=0.0, description="Meeting duration in seconds")
+
+
+class GenerateSummaryRequest(BaseModel):
+    """Request payload for generating or regenerating summary"""
+    force_regenerate: bool = Field(default=False, description="Force re-generation bypassing cache")
+
+
+class MeetingListItem(BaseModel):
+    """Meeting summary representation for list view"""
+    session_id: str = Field(..., description="Unique meeting session ID")
+    session_name: Optional[str] = Field(default=None, description="Human-readable session name")
+    start_time: datetime = Field(..., description="Start timestamp")
+    end_time: Optional[datetime] = Field(default=None, description="End timestamp")
+    status: str = Field(..., description="Meeting status: active, completed, failed")
+    total_chunks: int = Field(default=0, description="Total audio chunks")
+    duration_seconds: float = Field(default=0.0, description="Total meeting duration in seconds")
+    has_summary: bool = Field(default=False, description="Whether an AI summary is generated")
+    concise_summary: Optional[str] = Field(default=None, description="Short summary preview if available")
+
+
+class MeetingDetailResponse(BaseModel):
+    """Complete meeting detail including transcript and summary"""
+    session_id: str = Field(..., description="Session identifier")
+    session_name: Optional[str] = Field(default=None, description="Session name")
+    start_time: datetime = Field(..., description="Start timestamp")
+    end_time: Optional[datetime] = Field(default=None, description="End timestamp")
+    status: str = Field(..., description="Meeting status")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Session metadata")
+    total_chunks: int = Field(default=0, description="Number of chunks")
+    duration_seconds: float = Field(default=0.0, description="Total duration in seconds")
+    combined_transcript: str = Field(default="", description="Full stitched transcript")
+    chunks: List[Dict[str, Any]] = Field(default_factory=list, description="Processed chunk details")
+    summary: Optional[StructuredSummary] = Field(default=None, description="Structured summary if available")
+    summary_metadata: Optional[Dict[str, Any]] = Field(default=None, description="Generation metadata (model, timestamp, version)")

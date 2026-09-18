@@ -17,10 +17,17 @@ from .config import settings
 from .models.schemas import (
     SystemStatus, ErrorResponse, StartSessionRequest, StartSessionResponse,
     StopSessionRequest, StopSessionResponse, SessionInfo, AudioDeviceInfo,
-    ProcessedChunk
+    ProcessedChunk, MeetingSummaryResponse, GenerateSummaryRequest,
+    MeetingListItem, MeetingDetailResponse, StructuredSummary, ActionItem
 )
-from .database import initialize_database, cleanup_database, SessionOperations, db
+from .database import (
+    initialize_database, cleanup_database, SessionOperations,
+    SummaryOperations, ChunkOperations, db
+)
 from .services.ai_processor import AIProcessor
+from .services.summary_service import (
+    summary_service, GroqConfigurationError, TranscriptEmptyError
+)
 from .services.chunk_processor import (
     initialize_meeting_processor, process_session_chunk, 
     generate_session_summary, get_session_status
@@ -311,6 +318,238 @@ async def get_session_status_endpoint(session_id: str):
         return status
     else:
         return active_sessions[session_id]
+
+
+# ============================================================================
+# Meeting Intelligence & AI Summary Endpoints (Groq + LangChain)
+# ============================================================================
+
+@app.get("/meetings", response_model=List[MeetingListItem])
+@app.get("/sessions", response_model=List[MeetingListItem])
+async def list_all_meetings(limit: int = 50):
+    """
+    Retrieve all meetings (historical and active) with their durations,
+    chunk counts, and summary availability.
+    """
+    try:
+        raw_sessions = await SessionOperations.get_all_sessions(limit=limit)
+        items = []
+
+        for s in raw_sessions:
+            sess_id = s.get("session_id")
+            metadata = s.get("metadata") or {}
+            session_name = metadata.get("session_name") or metadata.get("name") or s.get("session_name")
+
+            # Check if active currently in memory
+            active_info = active_sessions.get(sess_id)
+            status = active_info.get("status") if active_info else s.get("status", "completed")
+            chunks_count = active_info.get("chunk_count", 0) if active_info else s.get("summary_stats", {}).get("total_chunks", 0)
+            duration = s.get("summary_stats", {}).get("duration_seconds", 0.0)
+
+            # Check summary status
+            has_summary = s.get("has_summary", False)
+            concise_summary = None
+
+            summary_doc = await SummaryOperations.get_structured_summary(sess_id)
+            if summary_doc and summary_doc.get("structured_summary"):
+                has_summary = True
+                concise_summary = summary_doc["structured_summary"].get("concise_summary")
+
+            items.append(MeetingListItem(
+                session_id=sess_id,
+                session_name=session_name,
+                start_time=s.get("start_time", datetime.utcnow()),
+                end_time=s.get("end_time"),
+                status=status,
+                total_chunks=chunks_count,
+                duration_seconds=duration,
+                has_summary=has_summary,
+                concise_summary=concise_summary
+            ))
+
+        return items
+    except Exception as e:
+        logger.error(f"Error fetching meetings list: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch meetings: {str(e)}")
+
+
+@app.get("/meetings/{meeting_id}", response_model=MeetingDetailResponse)
+@app.get("/sessions/{session_id}", response_model=MeetingDetailResponse)
+async def get_meeting_details(meeting_id: Optional[str] = None, session_id: Optional[str] = None):
+    """
+    Get full details for a meeting: metadata, chunks, stitched transcript, and structured summary.
+    """
+    target_id = meeting_id or session_id
+    if not target_id:
+        raise HTTPException(status_code=400, detail="Missing meeting_id or session_id")
+
+    session = await SessionOperations.get_session(target_id)
+    active_info = active_sessions.get(target_id)
+
+    if not session and not active_info:
+        raise HTTPException(status_code=404, detail=f"Meeting session '{target_id}' not found")
+
+    metadata = (session.get("metadata") if session else active_info.get("metadata")) or {}
+    session_name = metadata.get("session_name") or metadata.get("name") or target_id
+    start_time = session.get("start_time") if session else active_info.get("start_time", datetime.utcnow())
+    end_time = session.get("end_time") if session else active_info.get("end_time")
+    status = active_info.get("status") if active_info else session.get("status", "completed")
+
+    # Fetch all chunks
+    chunks = await ChunkOperations.get_chunks_for_session(target_id)
+    total_chunks = len(chunks) if chunks else (active_info.get("chunk_count", 0) if active_info else 0)
+
+    # Stitch full transcript
+    combined_transcript = summary_service.prepare_transcript_from_chunks(chunks)
+
+    # Total duration
+    duration = 0.0
+    if chunks:
+        duration = max(c.get("end_time", 0.0) for c in chunks)
+    elif session and session.get("summary_stats"):
+        duration = session["summary_stats"].get("duration_seconds", 0.0)
+
+    # Fetch structured summary if exists
+    structured_summary = None
+    summary_metadata = None
+    summary_doc = await SummaryOperations.get_structured_summary(target_id)
+    if summary_doc and summary_doc.get("structured_summary"):
+        try:
+            structured_summary = StructuredSummary(**summary_doc["structured_summary"])
+            summary_metadata = {
+                "generated_at": summary_doc.get("generated_at"),
+                "model_used": summary_doc.get("model_used"),
+                "summary_version": summary_doc.get("summary_version", "1.0.0"),
+            }
+        except Exception as e:
+            logger.warning(f"Error parsing stored summary for meeting {target_id}: {e}")
+
+    return MeetingDetailResponse(
+        session_id=target_id,
+        session_name=session_name,
+        start_time=start_time,
+        end_time=end_time,
+        status=status,
+        metadata=metadata,
+        total_chunks=total_chunks,
+        duration_seconds=duration,
+        combined_transcript=combined_transcript,
+        chunks=chunks,
+        summary=structured_summary,
+        summary_metadata=summary_metadata
+    )
+
+
+@app.post("/meetings/{meeting_id}/summary", response_model=MeetingSummaryResponse)
+@app.post("/sessions/{session_id}/summary", response_model=MeetingSummaryResponse)
+async def generate_meeting_summary(
+    meeting_id: Optional[str] = None, 
+    session_id: Optional[str] = None, 
+    request: Optional[GenerateSummaryRequest] = None
+):
+    """
+    Generate an AI-powered structured summary for a meeting transcript using Groq & LangChain.
+    - If already generated and force_regenerate is False, returns cached summary.
+    - If force_regenerate is True, recalculates with Groq LLM and updates database.
+    """
+    target_id = meeting_id or session_id
+    if not target_id:
+        raise HTTPException(status_code=400, detail="Missing meeting_id or session_id")
+
+    force_regenerate = request.force_regenerate if request else False
+
+    try:
+        result = await summary_service.generate_summary(
+            session_id=target_id,
+            force_regenerate=force_regenerate
+        )
+        return result
+    except GroqConfigurationError as e:
+        logger.error(f"Groq configuration error for meeting {target_id}: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+    except TranscriptEmptyError as e:
+        logger.warning(f"Transcript empty for meeting {target_id}: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Summary generation error for meeting {target_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate summary with Groq LLM: {str(e)}"
+        )
+
+
+@app.get("/meetings/{meeting_id}/summary", response_model=MeetingSummaryResponse)
+@app.get("/sessions/{session_id}/summary", response_model=MeetingSummaryResponse)
+async def get_meeting_summary(meeting_id: Optional[str] = None, session_id: Optional[str] = None):
+    """
+    Retrieve existing structured summary for a meeting.
+    """
+    target_id = meeting_id or session_id
+    if not target_id:
+        raise HTTPException(status_code=400, detail="Missing meeting_id or session_id")
+
+    summary_doc = await SummaryOperations.get_structured_summary(target_id)
+    if not summary_doc or not summary_doc.get("structured_summary"):
+        raise HTTPException(
+            status_code=404,
+            detail=f"No AI summary found for meeting '{target_id}'. Please generate one first."
+        )
+
+    return MeetingSummaryResponse(
+        session_id=target_id,
+        summary=StructuredSummary(**summary_doc["structured_summary"]),
+        generated_at=summary_doc.get("generated_at", datetime.utcnow()),
+        summary_version=summary_doc.get("summary_version", "1.0.0"),
+        model_used=summary_doc.get("model_used", settings.GROQ_MODEL),
+        is_cached=True,
+        total_chunks=summary_doc.get("total_chunks", 0),
+        total_duration=summary_doc.get("total_duration", 0.0),
+    )
+
+
+@app.get("/action-items")
+async def get_all_action_items(limit: int = 50):
+    """
+    Aggregate all action items extracted across all meetings.
+    """
+    try:
+        summaries = await SummaryOperations.get_all_summaries(limit=limit)
+        all_actions = []
+
+        for s in summaries:
+            sess_id = s.get("session_id")
+            struct = s.get("structured_summary")
+            if not struct or not isinstance(struct, dict):
+                continue
+
+            # Retrieve session name
+            session = await SessionOperations.get_session(sess_id)
+            meta = (session.get("metadata") if session else {}) or {}
+            session_name = meta.get("session_name") or meta.get("name") or sess_id
+
+            items = struct.get("action_items", [])
+            for item in items:
+                all_actions.append({
+                    "session_id": sess_id,
+                    "session_name": session_name,
+                    "meeting_date": s.get("generated_at") or s.get("timestamp"),
+                    "task": item.get("task", ""),
+                    "assignee": item.get("assignee", "Not mentioned"),
+                    "deadline": item.get("deadline", "Not mentioned"),
+                    "status": item.get("status", "Pending")
+                })
+
+        return all_actions
+    except Exception as e:
+        logger.error(f"Error aggregating action items: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 # Audio processing functions
