@@ -151,7 +151,7 @@ class LocalStorageManager:
                 "speakers": {"speakers": ["Speaker 1"]},
                 "emotions": {"primary_emotion": "neutral"},
                 "jargon": [],
-                "micro_summary": full_text[:120] if full_text else "Audio chunk",
+                "micro_summary": "",
                 "processing_status": "completed",
                 "created_at": dt.isoformat()
             })
@@ -278,6 +278,22 @@ class LocalStorageManager:
                 self._flush_to_disk()
                 return True
             return False
+
+    async def delete_session(self, session_id: str) -> bool:
+        async with self._lock:
+            deleted = False
+            if session_id in self.sessions:
+                del self.sessions[session_id]
+                deleted = True
+            if session_id in self.chunks:
+                del self.chunks[session_id]
+                deleted = True
+            if session_id in self.summaries:
+                del self.summaries[session_id]
+                deleted = True
+            if deleted:
+                self._flush_to_disk()
+            return deleted
 
     # Chunk CRUD
     async def save_chunk(self, session_id: str, chunk_data: Dict) -> bool:
@@ -803,6 +819,22 @@ class SessionOperations:
             except Exception as e:
                 logger.warning(f"Error updating summary status in MongoDB: {e}")
 
+        return True
+
+    @staticmethod
+    async def delete_session(session_id: str) -> bool:
+        """Delete a meeting session, its chunks, and its summaries completely."""
+        local_deleted = await db.local_storage.delete_session(session_id)
+
+        if db.is_connected():
+            try:
+                await db.sessions_collection.delete_one({"session_id": session_id})
+                await db.chunks_collection.delete_many({"session_id": session_id})
+                await db.summaries_collection.delete_many({"session_id": session_id})
+            except Exception as e:
+                logger.warning(f"Error deleting session from MongoDB: {e}")
+
+        logger.info(f"[Storage] Deleted meeting session {session_id}")
         return True
 
 

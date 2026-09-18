@@ -10,6 +10,21 @@ const MeetingDetails = ({ meetingId, onBack }) => {
   const [error, setError] = useState(null);
   const [transcriptFilter, setTranscriptFilter] = useState('');
   const [completedTasks, setCompletedTasks] = useState({});
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteMeeting = async () => {
+    try {
+      setIsDeleting(true);
+      await apiService.deleteMeeting(meetingId);
+      setShowDeleteModal(false);
+      onBack();
+    } catch (err) {
+      console.error('Failed to delete meeting:', err);
+      alert('Failed to delete meeting: ' + (err.message || 'Unknown error'));
+      setIsDeleting(false);
+    }
+  };
 
   const loadMeeting = useCallback(async () => {
     try {
@@ -141,6 +156,13 @@ const MeetingDetails = ({ meetingId, onBack }) => {
           <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
             Duration: {formatDuration(meeting?.duration_seconds)}
           </span>
+          <button 
+            className="btn btn-outline-danger" 
+            style={{ padding: '0.35rem 0.8rem', fontSize: '0.8rem' }}
+            onClick={() => setShowDeleteModal(true)}
+          >
+            🗑️ Delete Meeting
+          </button>
         </div>
       </div>
 
@@ -470,7 +492,7 @@ const MeetingDetails = ({ meetingId, onBack }) => {
       <div className="card">
         <div className="card-header">
           <div className="card-title">
-            <span>🎙️</span> Complete Transcript
+            <span></span> Complete Transcript
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>
               ({transcriptLines.length} segments)
             </span>
@@ -522,8 +544,8 @@ const MeetingDetails = ({ meetingId, onBack }) => {
 
       {/* Confirmation Modal for Summary Regeneration */}
       {showRegenModal && (
-        <div className="modal-backdrop">
-          <div className="modal-card">
+        <div className="modal-backdrop" onClick={() => setShowRegenModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <h3 className="modal-title">Regenerate AI Summary?</h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.5 }}>
               This will send the full meeting transcript to Groq LLM again to re-extract insights, decisions, and action items.
@@ -537,6 +559,40 @@ const MeetingDetails = ({ meetingId, onBack }) => {
                 onClick={() => handleGenerateSummary(true)}
               >
                 Yes, Regenerate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Meeting Deletion */}
+      {showDeleteModal && (
+        <div className="modal-backdrop" onClick={() => !isDeleting && setShowDeleteModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <span style={{ fontSize: '1.4rem' }}>🗑️</span>
+              <h3 className="modal-title">Delete This Meeting?</h3>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.5, margin: '0.25rem 0' }}>
+              Are you sure you want to permanently delete <strong style={{ color: '#fff' }}>"{meeting?.session_name || meetingId}"</strong>?
+            </p>
+            <p style={{ color: '#FCA5A5', fontSize: '0.8rem', margin: 0, padding: '0.5rem 0.75rem', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+              ⚠️ This will remove all audio chunks, transcribed dialog, emotion records, and Groq AI summaries for this meeting.
+            </p>
+            <div className="modal-actions">
+              <button 
+                className="btn btn-secondary" 
+                disabled={isDeleting}
+                onClick={() => setShowDeleteModal(false)}
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-danger" 
+                disabled={isDeleting}
+                onClick={handleDeleteMeeting}
+              >
+                {isDeleting ? 'Deleting...' : 'Delete Permanently'}
               </button>
             </div>
           </div>

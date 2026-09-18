@@ -384,15 +384,6 @@ const Dashboard = () => {
                 <Typography variant="body2">
                   {chunk.transcript.full_text}
                 </Typography>
-
-                {chunk.micro_summary && (
-                  <Typography
-                    variant="caption"
-                    sx={{ display: 'block', mt: 1, fontStyle: 'italic' }}
-                  >
-                    Summary: {chunk.micro_summary}
-                  </Typography>
-                )}
               </Box>
             ))}
 

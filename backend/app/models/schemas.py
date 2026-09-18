@@ -58,7 +58,7 @@ class ProcessedChunk(BaseModel):
     speakers: SpeakerInfo = Field(..., description="Speaker identification results")
     emotions: Dict[str, EmotionScore] = Field(..., description="Emotions by speaker")
     jargon: List[JargonTerm] = Field(..., description="Detected jargon terms")
-    micro_summary: str = Field(..., description="Brief summary of this chunk")
+    micro_summary: Optional[str] = Field(default="", description="Brief summary of this chunk (optional)")
     processing_status: str = Field(..., description="Processing status")
     error: Optional[str] = Field(default=None, description="Error message if processing failed")
 

@@ -112,11 +112,9 @@ class ChunkStitcher:
         # Combine jargon
         jargon_summary = self._combine_jargon(consistent_chunks)
         
-        # Create micro-summaries text for final summarization
-        micro_summaries_text = " ".join([chunk.micro_summary for chunk in consistent_chunks])
-        
-        # Generate final summary
-        final_summary = await self.summarizer.create_full_summary(micro_summaries_text)
+        # Generate baseline final summary from stitched transcript
+        summary_input = combined_transcript if combined_transcript else " ".join([getattr(c.transcript, 'full_text', '') for c in consistent_chunks])
+        final_summary = await self.summarizer.create_full_summary(summary_input)
         
         # Calculate metadata
         total_duration = sum(chunk.duration for chunk in consistent_chunks)

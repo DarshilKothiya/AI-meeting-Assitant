@@ -98,6 +98,11 @@ class ApiService {
     return response.data;
   }
 
+  async deleteMeeting(meetingId) {
+    const response = await api.delete(`/meetings/${meetingId}`);
+    return response.data;
+  }
+
   async getAllActionItems(limit = 50) {
     const response = await api.get(`/action-items?limit=${limit}`);
     return response.data;

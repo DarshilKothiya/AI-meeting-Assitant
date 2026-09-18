@@ -26,7 +26,7 @@ const Dashboard = ({
       <div className="metrics-grid">
         <div className="metric-card">
           <div className="metric-icon-wrap icon-blue">
-            <span>🎙️</span>
+            <span></span>
           </div>
           <div className="metric-info">
             <div className="metric-label">Session Status</div>
@@ -158,7 +158,7 @@ const Dashboard = ({
                     onClick={() => setShowStartDialog(true)}
                     style={{ width: '100%' }}
                   >
-                    🎙️ Start New Meeting
+                    Start New Meeting
                   </button>
                 </div>
               )}
@@ -307,7 +307,7 @@ const Dashboard = ({
                 Cancel
               </button>
               <button className="btn btn-primary" onClick={onStartSession}>
-                🎙️ Begin Recording
+                 Begin Recording
               </button>
             </div>
           </div>

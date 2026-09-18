@@ -22,10 +22,10 @@ const Sidebar = ({ activeTab, onTabChange, isConnected, isOpen, onClose }) => {
       <div className="sidebar-header">
         <div className="brand-logo">
           <div className="brand-icon">
-            ✨
+            
           </div>
           <div className="brand-info">
-            <span className="brand-title">Antigravity AI</span>
+            <span className="brand-title">AI</span>
             <span className="brand-subtitle">Meeting Intelligence</span>
           </div>
         </div>

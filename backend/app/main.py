@@ -219,6 +219,15 @@ async def stop_session(request: StopSessionRequest):
     session_id = request.session_id
     
     if session_id not in active_sessions:
+        past_session = await SessionOperations.get_session(session_id)
+        if past_session:
+            return StopSessionResponse(
+                session_id=session_id,
+                status="completed",
+                total_chunks=past_session.get("summary_stats", {}).get("total_chunks", 0),
+                total_duration=past_session.get("summary_stats", {}).get("duration_seconds", 0.0),
+                message="Session already stopped"
+            )
         raise HTTPException(status_code=404, detail="Session not found")
     
     try:
@@ -230,14 +239,24 @@ async def stop_session(request: StopSessionRequest):
 
 async def stop_session_internal(session_id: str) -> StopSessionResponse:
     """Internal function to stop a session"""
-    session_info = active_sessions.get(session_id)
+    session_info = active_sessions.pop(session_id, None)
     if not session_info:
-        raise HTTPException(status_code=404, detail="Session not found")
+        past_session = await SessionOperations.get_session(session_id)
+        return StopSessionResponse(
+            session_id=session_id,
+            status="completed",
+            total_chunks=past_session.get("summary_stats", {}).get("total_chunks", 0) if past_session else 0,
+            total_duration=past_session.get("summary_stats", {}).get("duration_seconds", 0.0) if past_session else 0.0,
+            message="Session already stopped"
+        )
     
     # Stop audio processing
-    if session_id in session_processors:
-        session_processors[session_id].capture.stop_recording()
-        del session_processors[session_id]
+    processor = session_processors.pop(session_id, None)
+    if processor:
+        try:
+            processor.capture.stop_recording()
+        except Exception as proc_err:
+            logger.warning(f"Error stopping audio recording: {proc_err}")
     
     # Generate final summary
     await connection_manager.send_status_update(
@@ -268,9 +287,6 @@ async def stop_session_internal(session_id: str) -> StopSessionResponse:
             "final_summary_generated": summary is not None
         }
     )
-    
-    # Remove from active sessions
-    del active_sessions[session_id]
     
     # Send final status update
     await connection_manager.send_status_update(
@@ -511,6 +527,31 @@ async def get_meeting_summary(meeting_id: Optional[str] = None, session_id: Opti
         total_chunks=summary_doc.get("total_chunks", 0),
         total_duration=summary_doc.get("total_duration", 0.0),
     )
+
+
+@app.delete("/meetings/{meeting_id}")
+@app.delete("/sessions/{session_id}")
+async def delete_meeting(meeting_id: Optional[str] = None, session_id: Optional[str] = None):
+    """
+    Permanently delete a meeting session, its chunks, and its AI summary.
+    """
+    target_id = meeting_id or session_id
+    if not target_id:
+        raise HTTPException(status_code=400, detail="Missing meeting_id or session_id")
+
+    # If it is currently active, stop recording first
+    if target_id in active_sessions:
+        try:
+            await stop_session_internal(target_id)
+        except Exception as e:
+            logger.warning(f"Notice: stopping active session before deletion: {e}")
+
+    await SessionOperations.delete_session(target_id)
+    return {
+        "success": True,
+        "session_id": target_id,
+        "message": f"Meeting '{target_id}' and all associated chunks were successfully deleted."
+    }
 
 
 @app.get("/action-items")

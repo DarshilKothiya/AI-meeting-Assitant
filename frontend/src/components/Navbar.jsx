@@ -60,7 +60,7 @@ const Navbar = ({
           </button>
         ) : (
           <button className="btn btn-record-start" onClick={onStartSession}>
-            <span>🎙️</span>
+            <span></span>
             Start Live Meeting
           </button>
         )}

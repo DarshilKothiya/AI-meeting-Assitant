@@ -39,7 +39,7 @@ const TranscriptPanel = ({ chunks, error, isLive = false }) => {
     <div className="card transcript-container">
       <div className="card-header">
         <div className="card-title">
-          <span>🎙️</span>
+          <span></span>
           <span>{isLive ? 'Real-Time Live Transcript' : 'Meeting Transcript'}</span>
           {isLive && (
             <span style={{ 
@@ -77,7 +77,7 @@ const TranscriptPanel = ({ chunks, error, isLive = false }) => {
 
         {chunks.length === 0 ? (
           <div className="empty-state" style={{ height: '100%', border: 'none' }}>
-            <div className="empty-icon">🎙️</div>
+            <div className="empty-icon"></div>
             <div className="empty-title">Waiting for Speech...</div>
             <p className="empty-desc">
               Start a meeting session to begin streaming live audio chunks and speech-to-text transcription.
@@ -108,12 +108,6 @@ const TranscriptPanel = ({ chunks, error, isLive = false }) => {
                 <div className="bubble-text">
                   {text || <em style={{ opacity: 0.5 }}>No speech detected in this chunk</em>}
                 </div>
-
-                {chunk.micro_summary && (
-                  <div className="bubble-summary">
-                    💡 Summary: {chunk.micro_summary}
-                  </div>
-                )}
               </div>
             );
           })

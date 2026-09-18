@@ -6,6 +6,8 @@ const MeetingsList = ({ onSelectMeeting, onStartNewMeeting }) => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // all, active, completed, has_summary
+  const [confirmDeleteMeeting, setConfirmDeleteMeeting] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     loadMeetings();
@@ -20,6 +22,20 @@ const MeetingsList = ({ onSelectMeeting, onStartNewMeeting }) => {
       console.error('Failed to load meetings list:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteMeeting = async (sessionId) => {
+    try {
+      setIsDeleting(true);
+      await apiService.deleteMeeting(sessionId);
+      setMeetings(prev => prev.filter(m => m.session_id !== sessionId));
+      setConfirmDeleteMeeting(null);
+    } catch (err) {
+      console.error('Failed to delete meeting:', err);
+      alert('Error deleting meeting: ' + (err.message || 'Unknown error'));
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -71,7 +87,7 @@ const MeetingsList = ({ onSelectMeeting, onStartNewMeeting }) => {
             🔄 Refresh
           </button>
           <button className="btn btn-primary" onClick={onStartNewMeeting}>
-            🎙️ Start Meeting
+             Start Meeting
           </button>
         </div>
       </div>
@@ -132,7 +148,7 @@ const MeetingsList = ({ onSelectMeeting, onStartNewMeeting }) => {
             </button>
           ) : (
             <button className="btn btn-primary" onClick={onStartNewMeeting}>
-              🎙️ Start Your First Meeting
+               Start Your First Meeting
             </button>
           )}
         </div>
@@ -148,7 +164,7 @@ const MeetingsList = ({ onSelectMeeting, onStartNewMeeting }) => {
                 <div className="meeting-title">
                   {meeting.session_name || 'Meeting Session'}
                 </div>
-                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   {meeting.has_summary && (
                     <span className="badge badge-summary">
                       ✨ Summary
@@ -157,6 +173,16 @@ const MeetingsList = ({ onSelectMeeting, onStartNewMeeting }) => {
                   <span className={`badge ${meeting.status === 'active' ? 'badge-active' : 'badge-completed'}`}>
                     {meeting.status === 'active' ? 'Live' : 'Done'}
                   </span>
+                  <button
+                    className="btn-card-delete"
+                    title="Delete Meeting"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmDeleteMeeting(meeting);
+                    }}
+                  >
+                    🗑️
+                  </button>
                 </div>
               </div>
 
@@ -178,6 +204,40 @@ const MeetingsList = ({ onSelectMeeting, onStartNewMeeting }) => {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {confirmDeleteMeeting && (
+        <div className="modal-backdrop" onClick={() => !isDeleting && setConfirmDeleteMeeting(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <span style={{ fontSize: '1.4rem' }}>🗑️</span>
+              <h3 className="modal-title">Delete Meeting</h3>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: 1.5, margin: '0.25rem 0' }}>
+              Are you sure you want to delete <strong style={{ color: '#fff' }}>"{confirmDeleteMeeting.session_name || confirmDeleteMeeting.session_id}"</strong>?
+            </p>
+            <p style={{ color: '#FCA5A5', fontSize: '0.8rem', margin: 0, padding: '0.5rem 0.75rem', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+              ⚠️ This will permanently remove all transcript chunks, dialogue, and AI summaries for this session.
+            </p>
+            <div className="modal-actions">
+              <button 
+                className="btn btn-secondary" 
+                disabled={isDeleting}
+                onClick={() => setConfirmDeleteMeeting(null)}
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-danger" 
+                disabled={isDeleting}
+                onClick={() => handleDeleteMeeting(confirmDeleteMeeting.session_id)}
+              >
+                {isDeleting ? 'Deleting...' : 'Delete Permanently'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
