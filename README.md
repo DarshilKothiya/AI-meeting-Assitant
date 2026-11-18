@@ -1,141 +1,212 @@
 # 🤖 AI Meeting Assistant
 
-A **Real-Time Meeting Transcription & Analysis System** built with a **FastAPI** backend and a **React** frontend.  
-The system captures live audio (via Stereo Mix or microphone), transcribes it in real-time using **Faster Whisper**, detects speaker emotions, extracts technical jargon, and generates meeting summaries — all streamed to the browser through **WebSockets**.
+A **Real-Time Meeting Transcription & Intelligence System** featuring a **FastAPI** backend, **Groq + LangChain** LLM summarization, and a modern **React** frontend.
+
+The system captures live audio (via Stereo Mix or microphone), transcribes speech in real time with **Faster Whisper**, analyzes speaker emotions, extracts technical jargon with definitions, and synthesizes structured executive summaries, decisions, and action items streamed via **WebSockets**.
 
 ---
 
-## 🚀 Features
+## 🚀 Key Features
 
-| Category | Feature |
-|---|---|
-| 🎤 **Audio Capture** | Real-time system audio capture via Stereo Mix or microphone using PyAudio |
-| 📝 **Transcription** | Speech-to-text using Faster Whisper (configurable model size) |
-| 😊 **Emotion Detection** | Per-speaker emotion analysis using DistilRoBERTa (`j-hartmann/emotion-english-distilroberta-base`) |
-| 🔍 **Jargon Detection** | Technical term extraction with KeyBERT + Wikipedia-powered definitions |
-| 🏷️ **Named Entity Recognition** | Organization, product, and event detection using spaCy |
-| 📊 **Live Dashboard** | Real-time transcript, emotion charts, speaker stats, and jargon panel in the browser |
-| 📡 **WebSocket Streaming** | Chunk-by-chunk real-time updates pushed to all connected clients |
-| 💾 **Database Persistence** | MongoDB storage for chunks, summaries, and sessions (with automatic in-memory fallback) |
-| 📄 **Transcription Files** | Every chunk's transcription is saved as a `.txt` file under `data/transcriptions/` |
-| 🎧 **Audio Recordings** | Raw audio chunks saved as `.wav` files under `data/audio_recordings/` |
-| 📋 **Meeting Summary** | Automatic session summary generated when a session is stopped |
+| Category | Feature | Description |
+|---|---|---|
+| 🎤 **Audio Capture** | **Stereo Mix & Microphone** | Capture system audio (Zoom, Google Meet, Teams, YouTube) or microphone input via PyAudio |
+| 📝 **Live Transcription** | **Faster Whisper** | High-speed, local speech-to-text with configurable model size (`tiny`, `base`, `small`, etc.) |
+| 😊 **Emotion Analysis** | **DistilRoBERTa** | Real-time speaker emotion detection (`joy`, `neutral`, `anger`, `sadness`, `surprise`, `fear`, `disgust`) |
+| 🔍 **Jargon Detection** | **KeyBERT + Wikipedia** | Extracts technical terms, algorithms, and libraries in real-time with automated Wikipedia definitions |
+| 🧠 **AI Meeting Intelligence** | **LangChain + Groq LLM** | Generates executive summaries, key decisions, unresolved issues, and structured action items |
+| ✅ **Action Items Tracker** | **Centralized Hub** | Dedicated view tracking actionable tasks, assignees, deadlines, and statuses across all meetings |
+| 📊 **Interactive Dashboard** | **Real-Time Streaming** | Live transcription feed, audio device switcher, emotion distribution charts, and jargon glossary |
+| 📁 **Meeting History** | **Full Archive & Details** | Browse past meetings, replay chunks, view full transcripts, and regenerate AI summaries on demand |
+| 💾 **Dual Storage Engine** | **MongoDB + Local JSON** | Cloud/local MongoDB with automatic persistent fallback to `data/meetings_db.json` (zero data loss) |
+| 🔄 **Auto-Recovery** | **Disk Transcript Scan** | Automatically indexes and recovers raw chunk transcripts from `data/transcriptions/` on startup |
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────┐    WebSocket     ┌─────────────────────────────────────────┐
-│   React     │◄═══════════════►│           FastAPI Backend               │
-│  Frontend   │   (real-time)    │                                         │
-│ :3000       │    HTTP REST     │  ┌─────────┐  ┌──────────────────────┐  │
-│             │◄────────────────►│  │  Main   │  │   AI Processor       │  │
-└─────────────┘                  │  │  App    │  │  ┌─Whisper──────────┐│  │
-                                 │  │         │  │  │ Transcription    ││  │
-                                 │  └────┬────┘  │  ├─Emotion──────────┤│  │
-                                 │       │       │  │ DistilRoBERTa    ││  │
-                                 │  ┌────▼────┐  │  ├─Jargon───────────┤│  │
-                                 │  │WebSocket│  │  │ KeyBERT + spaCy  ││  │
-                                 │  │ Manager │  │  ├─Summary──────────┤│  │
-                                 │  └─────────┘  │  │ Extractive       ││  │
-                                 │               │  └──────────────────┘│  │
-                                 │  ┌──────────┐ │  ┌──────────────────┐│  │
-                                 │  │  Audio   │ │  │ Chunk Processor  ││  │
-                                 │  │  Capture │ │  │ (Stitcher)       ││  │
-                                 │  └──────────┘ │  └──────────────────┘│  │
-                                 │               └──────────────────────┘  │
-                                 │  ┌──────────────────────────────────┐   │
-                                 │  │  MongoDB (or In-Memory Fallback) │   │
-                                 │  └──────────────────────────────────┘   │
-                                 └─────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                               React Frontend                                │
+│   ┌───────────────────┬───────────────────┬─────────────────────────────┐   │
+│   │  Live Dashboard   │  Meeting History  │   Action Items View / Hub   │   │
+│   │  (WebSockets)     │  (REST API)       │   (Task & Assignee Tracker) │   │
+│   └─────────▲─────────┴─────────▲─────────┴──────────────▲──────────────┘   │
+└─────────────┼───────────────────┼────────────────────────┼──────────────────┘
+              │ WebSocket (live)  │ HTTP REST              │ HTTP REST
+┌─────────────▼───────────────────▼────────────────────────▼──────────────────┐
+│                              FastAPI Backend                                │
+│                                                                             │
+│   ┌─────────────────────┐    ┌──────────────────────────────────────────┐   │
+│   │  Audio Capture      │    │  AI Processing Pipeline                  │   │
+│   │  (Stereo Mix / Mic) │───►│  ├─ Faster Whisper (Speech-to-Text)      │   │
+│   └─────────────────────┘    │  ├─ DistilRoBERTa (Emotion Detection)    │   │
+│                              │  ├─ KeyBERT + spaCy (Jargon Extraction)  │   │
+│                              │  └─ Wikipedia API (Definition Resolver)  │   │
+│                              └────────────────────┬─────────────────────┘   │
+│                                                   │                         │
+│   ┌───────────────────────────────────────────────▼─────────────────────┐   │
+│   │  Meeting Intelligence Service (LangChain + Groq LLM)                │   │
+│   │  ├─ Transcript Chunking (RecursiveCharacterTextSplitter)            │   │
+│   │  ├─ Executive Summarization & Key Decisions Extraction              │   │
+│   │  └─ Structured Action Items (Task, Assignee, Deadline, Status)      │   │
+│   └───────────────────────────────────────────────┬─────────────────────┘   │
+│                                                   │                         │
+│   ┌───────────────────────────────────────────────▼─────────────────────┐   │
+│   │  Dual Storage Architecture                                          │   │
+│   │  ├─ Primary Mirror: MongoDB Atlas / Local MongoDB                   │   │
+│   │  └─ Persistent Local Database: data/meetings_db.json (Auto Fallback)│   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📋 Requirements
+## 📁 Project Structure
 
-* **Python 3.8+** (3.10+ recommended)
-* **Node.js 16+** and npm
-* **Microphone / Stereo Mix** access for audio capture
-* **MongoDB** (optional — the system runs fully with an in-memory fallback if unavailable)
+```
+AI-meeting-Assistant/
+├── backend/
+│   ├── app/
+│   │   ├── audio/
+│   │   │   ├── __init__.py
+│   │   │   └── capture.py               # Audio capture & chunking (PyAudio)
+│   │   ├── database/
+│   │   │   ├── __init__.py
+│   │   │   └── connection.py            # MongoDB + Local JSON persistence manager
+│   │   ├── models/
+│   │   │   ├── __init__.py
+│   │   │   └── schemas.py               # Pydantic schemas (Chunks, Sessions, Summaries)
+│   │   ├── services/
+│   │   │   ├── __init__.py
+│   │   │   ├── ai_processor.py          # Faster Whisper, Emotion, Jargon, NER
+│   │   │   ├── chunk_processor.py       # Audio chunk stitching & real-time routing
+│   │   │   └── summary_service.py       # Groq + LangChain structured summarization
+│   │   ├── websocket/
+│   │   │   ├── __init__.py
+│   │   │   └── manager.py               # Real-time WebSocket connection manager
+│   │   ├── config.py                    # Environment & configuration settings
+│   │   ├── main.py                      # FastAPI application routes & lifespan
+│   │   └── __init__.py
+│   ├── .env                             # Backend environment variables
+│   └── .env.example                     # Example environment template
+│
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── ActionItemsView.jsx      # Aggregated action items dashboard
+│   │   │   ├── Dashboard.jsx            # Live recording & transcription dashboard
+│   │   │   ├── MeetingDetails.jsx       # Single meeting view, transcripts & summaries
+│   │   │   ├── MeetingsList.jsx         # Meeting archive & history browser
+│   │   │   ├── Navbar.jsx               # Navigation bar & audio device selector
+│   │   │   ├── Sidebar.jsx              # Navigation menu & live stats drawer
+│   │   │   └── TranscriptPanel.jsx      # Live streaming transcription panel
+│   │   ├── services/
+│   │   │   ├── apiService.js            # Axios REST client
+│   │   │   └── websocketService.js      # WebSocket client manager
+│   │   ├── App.jsx                      # Main app shell & view router
+│   │   ├── index.css                    # Tailwind / global styling
+│   │   └── index.jsx                    # React root entry point
+│   └── package.json
+│
+├── data/                                # Runtime data directory (git-ignored)
+│   ├── audio_recordings/                # Raw audio chunks (.wav)
+│   ├── transcriptions/                  # Raw text transcriptions (.txt)
+│   └── meetings_db.json                 # Persistent local JSON database
+│
+├── scripts/                             # Diagnostics & testing scripts
+│   ├── test_audio_devices.py            # Audio device listing
+│   ├── test_capture.py                  # Audio capture test
+│   ├── test_live_pipeline.py            # End-to-end pipeline test
+│   ├── test_system.py                   # Full system diagnostic
+│   └── test_transcription.py            # Whisper transcription test
+│
+├── requirements.txt                     # Backend Python dependencies
+├── .gitignore                           # Git ignore rules
+└── README.md
+```
 
 ---
 
-## 🛠️ Installation
+## 📋 Prerequisites
 
-### ⚠️ Important Notes
+* **Python 3.10+** (tested on Python 3.10, 3.11, 3.13)
+* **Node.js 18+** & **npm**
+* **Audio Input**: Microphone or Windows **Stereo Mix** (for capturing system/meeting audio)
+* **Groq API Key**: (Free tier available at [console.groq.com](https://console.groq.com)) for AI summarization & action items
+* **MongoDB**: Optional (MongoDB Atlas or local `mongodb://localhost:27017`). The system automatically uses persistent local storage (`data/meetings_db.json`) if MongoDB is offline.
+* **Windows Users**: [Microsoft Visual C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (required by PyAudio / C-extensions).
 
-* **AI packages may require additional setup** on some systems.
-* **Windows users**: Some packages need [Microsoft Visual C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/).
-* **Installation order matters** — follow the steps below carefully.
+---
 
-### 1️⃣ Clone and Setup Virtual Environment
+## 🛠️ Installation & Setup
+
+### 1️⃣ Clone the Repository
 
 ```bash
 git clone https://github.com/DarshilKothiya/AI-meeting-Assitant.git
 cd AI-meeting-Assistant
+```
 
-# Create virtual environment
+### 2️⃣ Backend Setup
+
+#### Create & Activate Virtual Environment
+
+```bash
+# Windows
 python -m venv venv
-
-# Activate (Windows)
 venv\Scripts\activate
 
-# Activate (Linux/Mac)
+# macOS / Linux
+python3 -m venv venv
 source venv/bin/activate
 ```
 
-### 2️⃣ Install Backend Dependencies (Step-by-Step)
+#### Install Dependencies
 
-#### Step 2.1: Core Web Framework
 ```bash
-pip install fastapi uvicorn[standard] websockets python-multipart pydantic python-dotenv loguru
-```
-
-#### Step 2.2: Database Packages
-```bash
-pip install motor pymongo
-```
-
-#### Step 2.3: Audio Processing
-```bash
-pip install pyaudio sounddevice librosa soundfile
-```
-
-#### Step 2.4: Data Processing
-```bash
-pip install numpy pandas scikit-learn
-```
-
-#### Step 2.5: NLP Packages
-```bash
-pip install nltk textblob spacy
+pip install --upgrade pip
+pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 ```
 
-#### Step 2.6: AI Models (may take time to download)
+> **Note for PyAudio on Windows**: If `pip install pyaudio` fails, install using `pip install pipwin && pipwin install pyaudio` or download the matching pre-compiled wheel from [Gohlke Wheels](https://github.com/cgohlke/pyaudio).
+
+---
+
+### 3️⃣ Configure Environment Variables
+
+Create or update `.env` inside the `backend/` directory:
+
 ```bash
-pip install transformers sentence-transformers keybert
+# backend/.env
+
+# Server Settings
+DEBUG=True
+
+# MongoDB Connection (Optional - leave default or use Atlas URI)
+MONGODB_URL=mongodb://localhost:27017
+# Example MongoDB Atlas URI:
+# MONGODB_URL=mongodb+srv://<username>:<password>@cluster0.mongodb.net/?appName=Cluster0
+
+# AI Transcription Device ("cpu" or "cuda")
+WHISPER_DEVICE=cpu
+WHISPER_MODEL=tiny
+
+# Groq API Configuration (Required for Structured Summaries & Action Items)
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_MODEL=openai/gpt-oss-120b
+# Recommended alternatives: llama-3.3-70b-versatile, llama3-70b-8192
+
+# Summary Chunking (for handling long transcripts)
+SUMMARY_CHUNK_SIZE=6000
+SUMMARY_CHUNK_OVERLAP=500
 ```
 
-#### Step 2.7: Speech Processing (large packages)
-```bash
-pip install faster-whisper torch torchaudio
-```
+---
 
-#### Step 2.8: Final Utilities
-```bash
-pip install aiofiles httpx requests wikipedia-api
-```
-
-#### Alternative: Install All at Once
-```bash
-pip install -r requirements.txt
-```
-> If this fails, use the step-by-step method above.
-
-### 3️⃣ Install Frontend Dependencies
+### 4️⃣ Frontend Setup
 
 ```bash
 cd frontend
@@ -145,294 +216,171 @@ cd ..
 
 ---
 
-## ⚙️ Configuration
+## 🎧 Audio Device Setup (Capturing Meeting Audio)
 
-### Environment Variables
+To transcribe what other people are saying in Zoom, Microsoft Teams, Google Meet, or YouTube:
 
-Create a `.env` file inside the `backend/` directory:
-
-```env
-# MongoDB Connection
-MONGODB_URL=mongodb://localhost:27017
-# OR use MongoDB Atlas (cloud):
-# MONGODB_URL=mongodb+srv://username:password@cluster.mongodb.net/?appName=YourApp
-
-# AI Model device: "cpu" or "cuda"
-WHISPER_DEVICE=cpu
-
-# Debug mode (True/False)
-DEBUG=True
-```
-
-> **Note**: If MongoDB is unavailable, the system automatically falls back to **in-memory storage** — no configuration needed.
-
-### Audio Device
-
-By default the system looks for **Stereo Mix** (captures system audio output). If not found, it falls back to the default microphone.
-
-To enable Stereo Mix on Windows:
-1. Right-click the speaker icon → **Sounds** → **Recording** tab
-2. Right-click in the empty area → **Show Disabled Devices**
-3. Right-click **Stereo Mix** → **Enable**
+### Windows (Stereo Mix)
+1. Right-click the speaker icon in your taskbar → **Sound Settings** → **More sound settings**.
+2. Go to the **Recording** tab.
+3. If **Stereo Mix** is not visible, right-click anywhere in the list and check **Show Disabled Devices**.
+4. Right-click **Stereo Mix** and select **Enable**.
+5. In the web app, select **Stereo Mix** from the top navbar dropdown before starting a meeting.
 
 ---
 
-## ▶️ Quick Start
+## ▶️ Running the Application
 
-### 1️⃣ Start the Backend Server
+### 1. Start the Backend Server
 
 ```bash
+# From the project root (with venv activated):
 cd backend
 python -m app.main
 ```
+The FastAPI server will start at **http://localhost:8000** (Swagger documentation: **http://localhost:8000/docs**).
 
-The server starts on **http://localhost:8000** with hot-reload enabled in debug mode.
+### 2. Start the Frontend React App
 
-### 2️⃣ Start the Frontend
-
+In a separate terminal:
 ```bash
 cd frontend
 npm start
 ```
-
-The React app starts on **http://localhost:3000**.
-
-### 3️⃣ Use the Application
-
-1. Open **http://localhost:3000** in your browser
-2. The dashboard will automatically connect via WebSocket (green "Connected" badge)
-3. Click **Start Session** to begin recording
-4. Live transcription, emotions, speakers, and jargon will populate in real-time
-5. Click **Stop Session** to generate a final meeting summary
+The React frontend will open automatically at **http://localhost:3000**.
 
 ---
 
-## 📁 Project Structure
+## 🖥️ Using the Application
 
-```
-AI-meeting-Assistant/
-│
-├── backend/                          # FastAPI backend
-│   ├── app/
-│   │   ├── __init__.py
-│   │   ├── main.py                   # FastAPI app, routes, lifespan, session mgmt
-│   │   ├── config.py                 # Settings (audio, models, DB, paths)
-│   │   ├── audio/
-│   │   │   └── capture.py            # PyAudio recording & chunk pipeline
-│   │   ├── database/
-│   │   │   ├── __init__.py
-│   │   │   └── connection.py         # MongoDB + in-memory fallback ops
-│   │   ├── models/
-│   │   │   └── schemas.py            # Pydantic models (ProcessedChunk, etc.)
-│   │   ├── services/
-│   │   │   ├── ai_processor.py       # Whisper, Emotion, Jargon, Summary services
-│   │   │   └── chunk_processor.py    # Chunk stitching & session summary
-│   │   └── websocket/
-│   │       └── manager.py            # WebSocket connection & message broadcasting
-│   └── .env                          # Environment variables
-│
-├── frontend/                         # React frontend (Create React App)
-│   ├── public/
-│   ├── src/
-│   │   ├── App.jsx                   # Root app with router
-│   │   ├── index.jsx                 # React entry point
-│   │   ├── index.css                 # Global styles
-│   │   ├── components/
-│   │   │   ├── Dashboard.jsx         # Main dashboard (active component)
-│   │   │   ├── Navbar.jsx            # Top navigation bar
-│   │   │   ├── TranscriptPanel.jsx   # Live transcript display
-│   │   │   ├── Sidebar.jsx           # Emotions, speakers, jargon, stats
-│   │   │   └── MainDashboard.jsx     # Alternative MUI-based dashboard
-│   │   └── services/
-│   │       ├── apiService.js         # Axios HTTP client
-│   │       └── websocketService.js   # Native WebSocket client
-│   └── package.json
-│
-├── data/                             # Generated at runtime
-│   ├── audio_recordings/             # Saved .wav chunks
-│   └── transcriptions/               # Saved .txt transcription files
-│
-├── scripts/                          # Diagnostic & test scripts
-│   ├── test_system.py                # Full system diagnostic
-│   ├── test_audio_devices.py         # Audio device listing
-│   ├── test_capture.py               # Audio capture test
-│   ├── test_transcription.py         # Whisper transcription test
-│   └── test_live_pipeline.py         # End-to-end pipeline test
-│
-├── requirements.txt                  # Python dependencies
-├── venv/                             # Python virtual environment
-└── README.md
-```
+### 1. Live Dashboard (`/` or `/live`)
+* Select your preferred audio input device in the top navigation bar.
+* Click **Start Session**, enter a session name (e.g., *"Sprint Planning"*), and start speaking or playing meeting audio.
+* Watch the live transcription, speaker turns, emotions, and technical jargon glossary update in real time.
+* Click **Stop Session** when the meeting ends.
+
+### 2. Meeting Details & AI Summary (`/details`)
+* Inspect the complete stitched transcript and individual audio chunks.
+* Click **Generate Summary** (or **Regenerate Summary**) to trigger the Groq + LangChain intelligence engine.
+* View:
+  * **Executive Overview**: High-level synopsis.
+  * **Key Discussion Points**: Breakdown of what was covered.
+  * **Explicit Decisions**: Agreements and commitments made.
+  * **Action Items**: Structured table with task, assignee, deadline, and status.
+  * **Open Questions & Risks**: Unresolved topics and blockers.
+
+### 3. Meeting History (`/meetings`)
+* Browse all completed and active meeting sessions.
+* View meeting duration, chunk counts, start timestamps, and summary status badges.
+* Open any past meeting to review notes or delete old recordings.
+
+### 4. Action Items Hub (`/action-items`)
+* View all action items extracted across all your meetings in a unified dashboard.
+* Filter and search tasks by status, assignee, or meeting.
 
 ---
 
 ## 🌐 API Reference
 
-### WebSocket
+### Real-Time WebSocket
 
-| Endpoint | Description |
-|---|---|
-| `ws://localhost:8000/ws` | Real-time WebSocket connection for live updates |
+* **URL**: `ws://localhost:8000/ws`
 
-**Client → Server messages:**
-| Type | Payload | Description |
+| Message Type | Direction | Payload Description |
 |---|---|---|
-| `subscribe` | `{ "type": "subscribe", "session_id": "..." }` | Subscribe to session updates |
-| `unsubscribe` | `{ "type": "unsubscribe", "session_id": "..." }` | Unsubscribe from session |
-| `heartbeat` | `{ "type": "heartbeat" }` | Keep-alive response |
+| `subscribe` | Client → Server | `{ "type": "subscribe", "session_id": "<id>" }` |
+| `unsubscribe` | Client → Server | `{ "type": "unsubscribe", "session_id": "<id>" }` |
+| `heartbeat` | Client ↔ Server | Keep-alive ping/pong (`{ "type": "heartbeat" }`) |
+| `chunk_update` | Server → Client | Real-time chunk with transcript, emotions, speakers, and jargon |
+| `summary_update` | Server → Client | Final meeting summary emitted on session stop |
 
-**Server → Client messages:**
-| Type | Description |
-|---|---|
-| `connection` | Connection confirmation with `client_id` |
-| `chunk_update` | Processed chunk with transcript, emotions, speakers, jargon, micro-summary |
-| `summary_update` | Final meeting summary when session stops |
-| `status` | Processing status messages |
-| `heartbeat` | Periodic keep-alive |
+---
 
-### REST Endpoints
+### REST API Endpoints
 
+#### Session & Recording Management
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/health` | System health check (DB, AI models, audio devices) |
-| `POST` | `/sessions/start` | Start a new recording session |
-| `POST` | `/sessions/stop` | Stop session and generate summary |
-| `GET` | `/sessions/active` | List all active sessions |
-| `GET` | `/sessions/{id}/status` | Get status of a specific session |
-| `GET` | `/audio/devices` | List available audio input devices |
-| `GET` | `/system/connections` | WebSocket connection statistics |
+| `POST` | `/sessions/start` | Start recording session (`session_name`, `device_id`) |
+| `POST` | `/sessions/stop` | Stop recording session and finalize audio |
+| `GET` | `/sessions/active` | Get currently active recording sessions |
+| `GET` | `/sessions/{id}/status` | Get real-time status of a recording session |
 
----
-
-## 🧠 AI Pipeline
-
-Each audio chunk (default: 15 seconds) passes through a five-stage AI pipeline:
-
-```
-Audio Chunk
-    │
-    ▼
-┌──────────────────┐
-│ 1. Transcription │  Faster Whisper (model: tiny/base/small/medium/large)
-└────────┬─────────┘
-         ▼
-┌──────────────────┐
-│ 2. Speaker Label │  All segments labeled as Speaker_1 (single-speaker mode)
-└────────┬─────────┘
-         ▼
-┌──────────────────┐
-│ 3. Emotion       │  DistilRoBERTa emotion classifier per speaker
-│    Detection     │  (joy, sadness, anger, fear, surprise, disgust, neutral)
-└────────┬─────────┘
-         ▼
-┌──────────────────┐
-│ 4. Jargon        │  KeyBERT keyword extraction + spaCy NER
-│    Detection     │  + Wikipedia API definition lookup
-└────────┬─────────┘
-         ▼
-┌──────────────────┐
-│ 5. Micro-Summary │  Extractive first-sentence summary
-└──────────────────┘
-```
-
-### Models Used
-
-| Service | Model | Purpose |
+#### Meeting Archive & Details
+| Method | Endpoint | Description |
 |---|---|---|
-| Transcription | `faster-whisper` (configurable: tiny → large) | Speech-to-text |
-| Emotion Detection | `j-hartmann/emotion-english-distilroberta-base` | Text emotion classification |
-| Jargon Extraction | `distilbert-base-nli-mean-tokens` (via KeyBERT) | Technical keyword extraction |
-| Named Entities | `en_core_web_sm` (spaCy) | ORG, PRODUCT, EVENT detection |
-| Definitions | Wikipedia API | Term definitions |
+| `GET` | `/meetings` | List all historical meeting sessions |
+| `GET` | `/meetings/{id}` | Get full meeting details, chunks, and transcript |
+| `DELETE` | `/meetings/{id}` | Delete a meeting and all associated local data |
+
+#### AI Meeting Intelligence & Summaries
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/meetings/{id}/summary` | Generate/regenerate structured Groq summary |
+| `GET` | `/meetings/{id}/summary` | Retrieve existing structured summary |
+| `GET` | `/action-items` | Get all aggregated action items across meetings |
+
+#### System & Audio Utilities
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/audio/devices` | List available system audio input devices |
+| `GET` | `/health` | Check health of database, Groq, and AI services |
+| `GET` | `/system/connections` | View active WebSocket connections |
 
 ---
 
-## 📊 Performance Tuning
+## 🧠 AI Pipeline Details
 
-| Goal | Recommendation |
-|---|---|
-| Lower latency | Reduce `CHUNK_DURATION` to `10` in `config.py` |
-| Better accuracy | Use a larger Whisper model (`base`, `small`, `medium`) |
-| Lower memory | Use `tiny` model with `int8` compute type |
-| Faster processing | Set `WHISPER_DEVICE=cuda` and `ENABLE_GPU=True` |
-| Skip jargon slowness | Reduce `MAX_JARGON_TERMS` in `config.py` |
+```
+Audio Chunk (15s)
+   │
+   ├──► 1. Faster Whisper ────────► Speech-to-Text Transcription
+   │
+   ├──► 2. DistilRoBERTa ─────────► Emotion Classification (7 classes)
+   │
+   ├──► 3. KeyBERT + spaCy ───────► Jargon Extraction + NER
+   │         │
+   │         └──► Wikipedia API ──► Real-time Glossary & Definitions
+   │
+   └──► 4. LangChain + Groq ──────► Anti-Hallucination Structured Intelligence
+                                    ├─ Executive Summary
+                                    ├─ Decisions vs. Discussions
+                                    └─ Action Items (Task, Owner, Deadline)
+```
 
 ---
 
-## 🐛 Troubleshooting
+## 🛠️ Diagnostics & Testing
 
-### Common Issues
-
-| Issue | Solution |
-|---|---|
-| `Microsoft Visual C++ Build Tools required` | Install [C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) → "Desktop development with C++" |
-| `ModuleNotFoundError: No module named 'fastapi'` | Ensure venv is activated: `venv\Scripts\activate` |
-| `Port already in use` | `netstat -ano \| findstr :8000` then `taskkill /PID <PID> /F` |
-| `MongoDB connection failed` | System auto-falls back to in-memory storage. Check `.env` if persistence needed. |
-| `spaCy model not found` | Run `python -m spacy download en_core_web_sm` |
-| `No audio device found` | Run `python scripts/test_audio_devices.py` to list devices |
-| `Stereo Mix not available` | Enable it in Windows Sound settings → Recording tab → Show Disabled Devices |
-| `Audio stream status: 2` | Non-critical warning — audio overrun, system handles it automatically |
-
-### Diagnostic Scripts
+Verify your environment using the included test suite:
 
 ```bash
-# Run the full system diagnostic
-python scripts/test_system.py
-
-# Test audio devices only
+# Test audio input devices (detects Stereo Mix and Microphones)
 python scripts/test_audio_devices.py
 
-# Test audio capture only
+# Test 15-second audio capture
 python scripts/test_capture.py
 
-# Test Whisper transcription
+# Test Faster Whisper transcription
 python scripts/test_transcription.py
 
-# Test full live pipeline
-python scripts/test_live_pipeline.py
+# Run full system diagnostic (DB, AI models, Audio)
+python scripts/test_system.py
 ```
-
----
-
-## 🔒 Security Considerations
-
-For production deployment:
-
-* Use **HTTPS/WSS** instead of HTTP/WS
-* Add **authentication** middleware
-* Configure **CORS** properly (currently allows `localhost:3000` only)
-* Use **environment variables** for secrets (never commit `.env`)
-* Set up **rate limiting**
-* Enable **input validation** on all endpoints
 
 ---
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Commit changes: `git commit -m "Add feature"`
-4. Push to branch: `git push origin feature-name`
-5. Open a Pull Request
+Contributions are welcome! Please follow these steps:
+1. Fork the repository.
+2. Create your feature branch (`git checkout -b feature/amazing-feature`).
+3. Commit your changes (`git commit -m "Add amazing feature"`).
+4. Push to the branch (`git push origin feature/amazing-feature`).
+5. Open a Pull Request.
 
 ---
 
 ## 📄 License
 
-This project is **open source** and free to use for learning and development.
-
----
-
-## ⭐ Support
-
-If you find this project useful:
-
-* ⭐ Star the repository
-* 🍴 Fork it
-* 🧠 Contribute improvements
-* 🐛 Report issues
-
----
-
-**Happy Meeting Transcribing! 🎙️🤖**
+This project is licensed under the MIT License - feel free to use it for personal and commercial projects.

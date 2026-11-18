@@ -22,6 +22,8 @@ meeting_transcription.log
 data/audio_recordings/*.raw
 data/audio_recordings/*.wav
 data/transcriptions/*.txt
+data/meetings_db.json
+data/*.tmp
 
 # AI model cache
 .cache/
