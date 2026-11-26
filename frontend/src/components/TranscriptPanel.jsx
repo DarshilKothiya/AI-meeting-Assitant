@@ -28,13 +28,6 @@ const TranscriptPanel = ({ chunks, error, isLive = false }) => {
     return '';
   };
 
-  const getSpeakers = (chunk) => {
-    if (chunk.speakers && Array.isArray(chunk.speakers.speakers)) {
-      return chunk.speakers.speakers;
-    }
-    return [];
-  };
-
   return (
     <div className="card transcript-container">
       <div className="card-header">
@@ -86,7 +79,6 @@ const TranscriptPanel = ({ chunks, error, isLive = false }) => {
         ) : (
           chunks.map((chunk, index) => {
             const text = getChunkText(chunk);
-            const speakers = getSpeakers(chunk);
             return (
               <div key={chunk.chunk_id ?? index} className="transcript-bubble">
                 <div className="bubble-meta">
@@ -94,11 +86,6 @@ const TranscriptPanel = ({ chunks, error, isLive = false }) => {
                     <span className="timestamp-tag">
                       {formatTime(chunk.start_time)} – {formatTime(chunk.end_time)}
                     </span>
-                    {speakers.length > 0 && (
-                      <span className="speaker-tag">
-                        👤 {speakers.join(', ')}
-                      </span>
-                    )}
                   </div>
                   <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                     Chunk #{chunk.chunk_id ?? index + 1}

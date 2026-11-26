@@ -5,6 +5,7 @@ import Dashboard from './components/Dashboard';
 import MeetingsList from './components/MeetingsList';
 import MeetingDetails from './components/MeetingDetails';
 import ActionItemsView from './components/ActionItemsView';
+import AuthPage from './components/AuthPage';
 import { webSocketService } from './services/websocketService';
 import { apiService } from './services/apiService';
 
@@ -31,21 +32,6 @@ const deriveEmotions = (chunks) => {
   }));
 };
 
-// Speaker turns helper
-const deriveSpeakers = (chunks) => {
-  const counts = {};
-
-  chunks.forEach((chunk) => {
-    if (chunk.speakers && Array.isArray(chunk.speakers.speakers)) {
-      chunk.speakers.speakers.forEach((speaker) => {
-        counts[speaker] = (counts[speaker] || 0) + 1;
-      });
-    }
-  });
-
-  return Object.entries(counts).map(([name, count]) => ({ name, count }));
-};
-
 // Technical jargon terms helper
 const deriveTerms = (chunks) => {
   const map = {};
@@ -68,6 +54,8 @@ const deriveTerms = (chunks) => {
 };
 
 function App() {
+  const [user, setUser] = useState(() => apiService.getStoredUser());
+  const [authChecking, setAuthChecking] = useState(() => Boolean(apiService.getToken()));
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedMeetingId, setSelectedMeetingId] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -90,12 +78,60 @@ function App() {
       currentChunk: 0,
     },
     emotions: [],
-    speakers: [],
     technicalTerms: [],
   });
 
-  // Initialize WebSocket and audio devices
+  const handleLogout = () => {
+    apiService.logout();
+    webSocketService.disconnect();
+    setUser(null);
+    setActiveTab('dashboard');
+    setSelectedMeetingId(null);
+    setState({
+      isConnected: false,
+      currentSession: null,
+      currentSessionName: '',
+      sessionStatus: 'idle',
+      chunks: [],
+      finalSummary: null,
+      error: null,
+      sessionStats: {
+        totalChunks: 0,
+        totalDuration: 0,
+        currentChunk: 0,
+      },
+      emotions: [],
+      technicalTerms: [],
+    });
+  };
+
+  // Verify existing auth token on mount
   useEffect(() => {
+    apiService.setUnauthorizedHandler(() => {
+      setUser(null);
+      webSocketService.disconnect();
+    });
+
+    const token = apiService.getToken();
+    if (!token) {
+      setAuthChecking(false);
+      return;
+    }
+
+    apiService
+      .getMe()
+      .then((me) => setUser(me))
+      .catch(() => {
+        apiService.logout();
+        setUser(null);
+      })
+      .finally(() => setAuthChecking(false));
+  }, []);
+
+  // Initialize WebSocket and audio devices once authenticated
+  useEffect(() => {
+    if (!user) return;
+
     const initialize = async () => {
       try {
         // Load audio input devices
@@ -133,7 +169,6 @@ function App() {
                   totalDuration: chunk.end_time || prev.sessionStats.totalDuration,
                 },
                 emotions: deriveEmotions(newChunks),
-                speakers: deriveSpeakers(newChunks),
                 technicalTerms: deriveTerms(newChunks),
               };
             }
@@ -170,7 +205,7 @@ function App() {
     return () => {
       webSocketService.disconnect();
     };
-  }, []);
+  }, [user]);
 
   const handleStartSession = async () => {
     try {
@@ -200,7 +235,6 @@ function App() {
           currentChunk: 0,
         },
         emotions: [],
-        speakers: [],
         technicalTerms: [],
       }));
 
@@ -239,6 +273,21 @@ function App() {
     setActiveTab('details');
   };
 
+  if (authChecking) {
+    return (
+      <div className="auth-shell">
+        <div className="loading-container">
+          <div className="spinner" />
+          <p style={{ color: 'var(--text-secondary)' }}>Loading Nexora - Meeting Assistant...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthPage onAuthSuccess={(loggedInUser) => setUser(loggedInUser)} />;
+  }
+
   return (
     <div className="app-shell">
       {/* Sidebar Navigation */}
@@ -253,6 +302,8 @@ function App() {
         isConnected={state.isConnected}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        user={user}
+        onLogout={handleLogout}
       />
 
       {/* Main Content Area */}

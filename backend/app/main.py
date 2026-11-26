@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 import pyaudio
@@ -18,12 +18,14 @@ from .models.schemas import (
     SystemStatus, ErrorResponse, StartSessionRequest, StartSessionResponse,
     StopSessionRequest, StopSessionResponse, SessionInfo, AudioDeviceInfo,
     ProcessedChunk, MeetingSummaryResponse, GenerateSummaryRequest,
-    MeetingListItem, MeetingDetailResponse, StructuredSummary, ActionItem
+    MeetingListItem, MeetingDetailResponse, StructuredSummary, ActionItem,
+    UserRegisterRequest, UserLoginRequest, UserResponse, AuthResponse
 )
 from .database import (
     initialize_database, cleanup_database, SessionOperations,
-    SummaryOperations, ChunkOperations, db
+    SummaryOperations, ChunkOperations, UserOperations, db
 )
+from .auth import hash_password, verify_password, create_access_token, get_current_user
 from .services.ai_processor import AIProcessor
 from .services.summary_service import (
     summary_service, GroqConfigurationError, TranscriptEmptyError
@@ -82,7 +84,7 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title="Meeting Transcription System",
+    title="Nexora - Meeting Assistant",
     description="Real-time meeting transcription with AI analysis",
     version="1.0.0",
     lifespan=lifespan
@@ -162,13 +164,93 @@ async def health_check():
     )
 
 
+# ============================================================================
+# Authentication Endpoints
+# ============================================================================
+
+@app.post("/auth/register", response_model=AuthResponse)
+async def register_user(request: UserRegisterRequest):
+    """Register a new user account in MongoDB."""
+    email_lower = request.email.strip().lower()
+    existing = await UserOperations.get_user_by_email(email_lower)
+    if existing:
+        raise HTTPException(status_code=400, detail="An account with this email already exists.")
+
+    user_id = str(uuid.uuid4())
+    pw_hash = hash_password(request.password)
+    user_doc = await UserOperations.create_user(
+        user_id=user_id,
+        name=request.name.strip(),
+        email=email_lower,
+        password_hash=pw_hash,
+    )
+
+    token = create_access_token({"sub": user_id, "email": user_doc["email"], "name": user_doc["name"]})
+    return AuthResponse(
+        access_token=token,
+        token_type="bearer",
+        user=UserResponse(
+            user_id=user_doc["user_id"],
+            name=user_doc["name"],
+            email=user_doc["email"],
+            created_at=user_doc.get("created_at"),
+        ),
+    )
+
+
+@app.post("/auth/login", response_model=AuthResponse)
+async def login_user(request: UserLoginRequest):
+    """Authenticate an existing user and return a JWT token."""
+    user = await UserOperations.get_user_by_email(request.email)
+    if not user or not verify_password(request.password, user.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    token = create_access_token({"sub": user["user_id"], "email": user["email"], "name": user["name"]})
+    return AuthResponse(
+        access_token=token,
+        token_type="bearer",
+        user=UserResponse(
+            user_id=user["user_id"],
+            name=user["name"],
+            email=user["email"],
+            created_at=user.get("created_at"),
+        ),
+    )
+
+
+@app.get("/auth/me", response_model=UserResponse)
+async def get_me(current_user: Dict = Depends(get_current_user)):
+    """Return the currently authenticated user's profile."""
+    return UserResponse(**current_user)
+
+
+async def _verify_session_ownership(session_id: str, user_id: str):
+    """Ensure the session belongs to the authenticated user."""
+    active_info = active_sessions.get(session_id)
+    if active_info:
+        if active_info.get("user_id") != user_id:
+            raise HTTPException(status_code=403, detail="You do not have access to this meeting session.")
+        return
+
+    session = await SessionOperations.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Meeting session '{session_id}' not found")
+    if session.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="You do not have access to this meeting session.")
+
+
 # Session management endpoints
 @app.post("/sessions/start", response_model=StartSessionResponse)
-async def start_session(request: StartSessionRequest, background_tasks: BackgroundTasks):
-    """Start a new transcription session"""
+async def start_session(
+    request: StartSessionRequest,
+    background_tasks: BackgroundTasks,
+    current_user: Dict = Depends(get_current_user),
+):
+    """Start a new transcription session scoped to the authenticated user"""
     try:
         # Generate unique session ID
         session_id = str(uuid.uuid4())
+        user_id = current_user["user_id"]
         
         # Create session in database
         await SessionOperations.create_session(
@@ -176,12 +258,14 @@ async def start_session(request: StartSessionRequest, background_tasks: Backgrou
             {
                 "session_name": request.session_name,
                 **request.metadata
-            }
+            },
+            user_id=user_id,
         )
         
         # Create session info
         session_info = {
             "session_id": session_id,
+            "user_id": user_id,
             "start_time": datetime.utcnow(),
             "status": "active",
             "chunk_count": 0,
@@ -214,9 +298,10 @@ async def start_session(request: StartSessionRequest, background_tasks: Backgrou
 
 
 @app.post("/sessions/stop", response_model=StopSessionResponse)
-async def stop_session(request: StopSessionRequest):
+async def stop_session(request: StopSessionRequest, current_user: Dict = Depends(get_current_user)):
     """Stop a transcription session"""
     session_id = request.session_id
+    await _verify_session_ownership(session_id, current_user["user_id"])
     
     if session_id not in active_sessions:
         past_session = await SessionOperations.get_session(session_id)
@@ -307,25 +392,28 @@ async def stop_session_internal(session_id: str) -> StopSessionResponse:
 
 
 @app.get("/sessions/active", response_model=List[SessionInfo])
-async def get_active_sessions():
-    """Get all active sessions"""
+async def get_active_sessions(current_user: Dict = Depends(get_current_user)):
+    """Get all active sessions for the current user"""
     sessions = []
+    user_id = current_user["user_id"]
     
     for session_id, info in active_sessions.items():
-        sessions.append(SessionInfo(
-            session_id=session_id,
-            start_time=info["start_time"],
-            status=info["status"],
-            metadata=info["metadata"],
-            end_time=info.get("end_time")
-        ))
+        if info.get("user_id") == user_id:
+            sessions.append(SessionInfo(
+                session_id=session_id,
+                start_time=info["start_time"],
+                status=info["status"],
+                metadata=info["metadata"],
+                end_time=info.get("end_time")
+            ))
     
     return sessions
 
 
 @app.get("/sessions/{session_id}/status")
-async def get_session_status_endpoint(session_id: str):
+async def get_session_status_endpoint(session_id: str, current_user: Dict = Depends(get_current_user)):
     """Get status of a specific session"""
+    await _verify_session_ownership(session_id, current_user["user_id"])
     if session_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Session not found")
     
@@ -342,13 +430,12 @@ async def get_session_status_endpoint(session_id: str):
 
 @app.get("/meetings", response_model=List[MeetingListItem])
 @app.get("/sessions", response_model=List[MeetingListItem])
-async def list_all_meetings(limit: int = 50):
+async def list_all_meetings(limit: int = 50, current_user: Dict = Depends(get_current_user)):
     """
-    Retrieve all meetings (historical and active) with their durations,
-    chunk counts, and summary availability.
+    Retrieve all meetings (historical and active) belonging to the authenticated user.
     """
     try:
-        raw_sessions = await SessionOperations.get_all_sessions(limit=limit)
+        raw_sessions = await SessionOperations.get_all_sessions(limit=limit, user_id=current_user["user_id"])
         items = []
 
         for s in raw_sessions:
@@ -391,7 +478,11 @@ async def list_all_meetings(limit: int = 50):
 
 @app.get("/meetings/{meeting_id}", response_model=MeetingDetailResponse)
 @app.get("/sessions/{session_id}", response_model=MeetingDetailResponse)
-async def get_meeting_details(meeting_id: Optional[str] = None, session_id: Optional[str] = None):
+async def get_meeting_details(
+    meeting_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    current_user: Dict = Depends(get_current_user),
+):
     """
     Get full details for a meeting: metadata, chunks, stitched transcript, and structured summary.
     """
@@ -399,6 +490,7 @@ async def get_meeting_details(meeting_id: Optional[str] = None, session_id: Opti
     if not target_id:
         raise HTTPException(status_code=400, detail="Missing meeting_id or session_id")
 
+    await _verify_session_ownership(target_id, current_user["user_id"])
     session = await SessionOperations.get_session(target_id)
     active_info = active_sessions.get(target_id)
 
@@ -461,7 +553,8 @@ async def get_meeting_details(meeting_id: Optional[str] = None, session_id: Opti
 async def generate_meeting_summary(
     meeting_id: Optional[str] = None, 
     session_id: Optional[str] = None, 
-    request: Optional[GenerateSummaryRequest] = None
+    request: Optional[GenerateSummaryRequest] = None,
+    current_user: Dict = Depends(get_current_user),
 ):
     """
     Generate an AI-powered structured summary for a meeting transcript using Groq & LangChain.
@@ -472,6 +565,7 @@ async def generate_meeting_summary(
     if not target_id:
         raise HTTPException(status_code=400, detail="Missing meeting_id or session_id")
 
+    await _verify_session_ownership(target_id, current_user["user_id"])
     force_regenerate = request.force_regenerate if request else False
 
     try:
@@ -502,7 +596,11 @@ async def generate_meeting_summary(
 
 @app.get("/meetings/{meeting_id}/summary", response_model=MeetingSummaryResponse)
 @app.get("/sessions/{session_id}/summary", response_model=MeetingSummaryResponse)
-async def get_meeting_summary(meeting_id: Optional[str] = None, session_id: Optional[str] = None):
+async def get_meeting_summary(
+    meeting_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    current_user: Dict = Depends(get_current_user),
+):
     """
     Retrieve existing structured summary for a meeting.
     """
@@ -510,6 +608,7 @@ async def get_meeting_summary(meeting_id: Optional[str] = None, session_id: Opti
     if not target_id:
         raise HTTPException(status_code=400, detail="Missing meeting_id or session_id")
 
+    await _verify_session_ownership(target_id, current_user["user_id"])
     summary_doc = await SummaryOperations.get_structured_summary(target_id)
     if not summary_doc or not summary_doc.get("structured_summary"):
         raise HTTPException(
@@ -531,13 +630,19 @@ async def get_meeting_summary(meeting_id: Optional[str] = None, session_id: Opti
 
 @app.delete("/meetings/{meeting_id}")
 @app.delete("/sessions/{session_id}")
-async def delete_meeting(meeting_id: Optional[str] = None, session_id: Optional[str] = None):
+async def delete_meeting(
+    meeting_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    current_user: Dict = Depends(get_current_user),
+):
     """
     Permanently delete a meeting session, its chunks, and its AI summary.
     """
     target_id = meeting_id or session_id
     if not target_id:
         raise HTTPException(status_code=400, detail="Missing meeting_id or session_id")
+
+    await _verify_session_ownership(target_id, current_user["user_id"])
 
     # If it is currently active, stop recording first
     if target_id in active_sessions:
@@ -555,22 +660,23 @@ async def delete_meeting(meeting_id: Optional[str] = None, session_id: Optional[
 
 
 @app.get("/action-items")
-async def get_all_action_items(limit: int = 50):
+async def get_all_action_items(limit: int = 50, current_user: Dict = Depends(get_current_user)):
     """
-    Aggregate all action items extracted across all meetings.
+    Aggregate all action items extracted across the authenticated user's meetings.
     """
     try:
-        summaries = await SummaryOperations.get_all_summaries(limit=limit)
+        user_sessions = await SessionOperations.get_all_sessions(limit=limit, user_id=current_user["user_id"])
+        user_session_map = {s.get("session_id"): s for s in user_sessions if s.get("session_id")}
         all_actions = []
 
-        for s in summaries:
-            sess_id = s.get("session_id")
-            struct = s.get("structured_summary")
+        for sess_id, session in user_session_map.items():
+            summary_doc = await SummaryOperations.get_structured_summary(sess_id)
+            if not summary_doc:
+                continue
+            struct = summary_doc.get("structured_summary")
             if not struct or not isinstance(struct, dict):
                 continue
 
-            # Retrieve session name
-            session = await SessionOperations.get_session(sess_id)
             meta = (session.get("metadata") if session else {}) or {}
             session_name = meta.get("session_name") or meta.get("name") or sess_id
 
@@ -579,7 +685,7 @@ async def get_all_action_items(limit: int = 50):
                 all_actions.append({
                     "session_id": sess_id,
                     "session_name": session_name,
-                    "meeting_date": s.get("generated_at") or s.get("timestamp"),
+                    "meeting_date": summary_doc.get("generated_at") or summary_doc.get("timestamp"),
                     "task": item.get("task", ""),
                     "assignee": item.get("assignee", "Not mentioned"),
                     "deadline": item.get("deadline", "Not mentioned"),

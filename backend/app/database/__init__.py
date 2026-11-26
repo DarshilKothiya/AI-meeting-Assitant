@@ -3,6 +3,7 @@ from .connection import (
     ChunkOperations,
     SummaryOperations,
     SessionOperations,
+    UserOperations,
     initialize_database,
     cleanup_database,
     db

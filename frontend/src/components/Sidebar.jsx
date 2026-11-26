@@ -1,6 +1,6 @@
 import React from 'react';
 
-const Sidebar = ({ activeTab, onTabChange, isConnected, isOpen, onClose }) => {
+const Sidebar = ({ activeTab, onTabChange, isConnected, isOpen, onClose, user, onLogout }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: '📊' },
     { id: 'meetings', label: 'Meetings', icon: '📁' },
@@ -22,11 +22,11 @@ const Sidebar = ({ activeTab, onTabChange, isConnected, isOpen, onClose }) => {
       <div className="sidebar-header">
         <div className="brand-logo">
           <div className="brand-icon">
-            
+            N
           </div>
           <div className="brand-info">
-            <span className="brand-title">AI</span>
-            <span className="brand-subtitle">Meeting Intelligence</span>
+            <span className="brand-title">Nexora</span>
+            <span className="brand-subtitle">Meeting Assistant</span>
           </div>
         </div>
       </div>
@@ -45,8 +45,30 @@ const Sidebar = ({ activeTab, onTabChange, isConnected, isOpen, onClose }) => {
         ))}
       </nav>
 
-      {/* Footer System Status */}
+      {/* Footer System Status & User Account */}
       <div className="sidebar-footer">
+        {user && (
+          <div className="user-account-card">
+            <div className="user-account-info">
+              <div className="user-avatar">
+                {(user.name || user.email || 'U').charAt(0).toUpperCase()}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div className="user-name">{user.name || 'User'}</div>
+                <div className="user-email">{user.email}</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn-logout"
+              onClick={onLogout}
+              title="Sign Out"
+            >
+              Sign Out
+            </button>
+          </div>
+        )}
+
         <div className="status-pill">
           <div className={`status-dot ${isConnected ? 'connected' : ''}`} />
           <span>{isConnected ? 'Backend Connected' : 'Connecting...'}</span>

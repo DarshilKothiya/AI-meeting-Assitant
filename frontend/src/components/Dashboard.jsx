@@ -68,18 +68,6 @@ const Dashboard = ({
             </div>
           </div>
         </div>
-
-        <div className="metric-card">
-          <div className="metric-icon-wrap icon-amber">
-            <span>👥</span>
-          </div>
-          <div className="metric-info">
-            <div className="metric-label">Speakers Detected</div>
-            <div className="metric-value">
-              {state.speakers?.length || 0}
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Completed Session Banner if finished */}
@@ -161,40 +149,6 @@ const Dashboard = ({
                     Start New Meeting
                   </button>
                 </div>
-              )}
-            </div>
-          </div>
-
-          {/* Speakers Card */}
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">
-                <span>👥</span> Speakers ({state.speakers?.length || 0})
-              </div>
-            </div>
-            <div className="card-body">
-              {state.speakers && state.speakers.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                  {state.speakers.map((sp, idx) => (
-                    <div 
-                      key={idx} 
-                      style={{ 
-                        display: 'flex', 
-                        justifyContent: 'space-between', 
-                        alignItems: 'center',
-                        padding: '0.5rem 0.75rem',
-                        backgroundColor: 'rgba(15, 23, 42, 0.4)',
-                        borderRadius: 'var(--radius-sm)',
-                        fontSize: '0.85rem'
-                      }}
-                    >
-                      <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>👤 {sp.name}</span>
-                      <span style={{ color: 'var(--text-muted)' }}>{sp.count} turns</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No speakers detected yet</p>
               )}
             </div>
           </div>

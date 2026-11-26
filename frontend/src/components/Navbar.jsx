@@ -30,7 +30,7 @@ const Navbar = ({
               <span>Recording: {activeSessionName || 'Live Session'}</span>
             </>
           ) : (
-            <span>Meeting Intelligence Platform</span>
+            <span>Nexora - Meeting Assistant</span>
           )}
         </div>
       </div>

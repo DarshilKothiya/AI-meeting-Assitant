@@ -1,6 +1,6 @@
-# 🤖 AI Meeting Assistant
+# 🤖 Nexora - Meeting Assistant
 
-A **Real-Time Meeting Transcription & Intelligence System** featuring a **FastAPI** backend, **Groq + LangChain** LLM summarization, and a modern **React** frontend.
+A **Real-Time Meeting Transcription & Intelligence System** featuring a **FastAPI** backend, **Groq + LangChain** LLM summarization, **MongoDB** user authentication & per-user meeting storage, and a modern **React** frontend.
 
 The system captures live audio (via Stereo Mix or microphone), transcribes speech in real time with **Faster Whisper**, analyzes speaker emotions, extracts technical jargon with definitions, and synthesizes structured executive summaries, decisions, and action items streamed via **WebSockets**.
 

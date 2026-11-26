@@ -42,6 +42,7 @@ class LocalStorageManager:
         self.sessions: Dict[str, Dict[str, Any]] = {}
         self.chunks: Dict[str, List[Dict[str, Any]]] = {}
         self.summaries: Dict[str, Dict[str, Any]] = {}
+        self.users: Dict[str, Dict[str, Any]] = {}
         self._lock = asyncio.Lock()
         self._initialized = False
 
@@ -59,6 +60,7 @@ class LocalStorageManager:
                         self.sessions = data.get("sessions", {})
                         self.chunks = data.get("chunks", {})
                         self.summaries = data.get("summaries", {})
+                        self.users = data.get("users", {})
                         logger.info(
                             f"[Local Storage] Loaded {len(self.sessions)} sessions, "
                             f"{sum(len(c) for c in self.chunks.values())} chunks from {self.file_path}"
@@ -68,6 +70,7 @@ class LocalStorageManager:
                     self.sessions = {}
                     self.chunks = {}
                     self.summaries = {}
+                    self.users = {}
 
             # Recover any past transcription files from disk that aren't yet in storage
             recovered_count = self._recover_past_transcriptions()
@@ -195,6 +198,7 @@ class LocalStorageManager:
                 "sessions": self.sessions,
                 "chunks": self.chunks,
                 "summaries": self.summaries,
+                "users": self.users,
                 "saved_at": datetime.utcnow().isoformat()
             }
             with open(temp_file, "w", encoding="utf-8") as f:
@@ -216,13 +220,35 @@ class LocalStorageManager:
         async with self._lock:
             self._flush_to_disk()
 
+    # User CRUD
+    async def create_user(self, user_data: Dict[str, Any]) -> bool:
+        async with self._lock:
+            user_id = user_data["user_id"]
+            self.users[user_id] = copy.deepcopy(user_data)
+            self._flush_to_disk()
+            return True
+
+    async def get_user_by_email(self, email: str) -> Optional[Dict]:
+        async with self._lock:
+            email_lower = email.strip().lower()
+            for u in self.users.values():
+                if str(u.get("email", "")).lower() == email_lower:
+                    return copy.deepcopy(u)
+            return None
+
+    async def get_user_by_id(self, user_id: str) -> Optional[Dict]:
+        async with self._lock:
+            u = self.users.get(user_id)
+            return copy.deepcopy(u) if u else None
+
     # Session CRUD
-    async def create_session(self, session_id: str, metadata: Optional[Dict] = None) -> bool:
+    async def create_session(self, session_id: str, metadata: Optional[Dict] = None, user_id: Optional[str] = None) -> bool:
         async with self._lock:
             now = datetime.utcnow().isoformat()
             doc = {
                 "_id": f"sess_{session_id}",
                 "session_id": session_id,
+                "user_id": user_id,
                 "start_time": now,
                 "status": "active",
                 "metadata": metadata or {},
@@ -250,9 +276,11 @@ class LocalStorageManager:
             sess = self.sessions.get(session_id)
             return copy.deepcopy(sess) if sess else None
 
-    async def get_all_sessions(self, limit: int = 100) -> List[Dict]:
+    async def get_all_sessions(self, limit: int = 100, user_id: Optional[str] = None) -> List[Dict]:
         async with self._lock:
             all_s = list(self.sessions.values())
+            if user_id is not None:
+                all_s = [s for s in all_s if s.get("user_id") == user_id]
             sorted_s = sorted(
                 all_s, 
                 key=lambda x: str(x.get("start_time", "")), 
@@ -260,9 +288,12 @@ class LocalStorageManager:
             )
             return copy.deepcopy(sorted_s[:limit])
 
-    async def get_active_sessions(self) -> List[Dict]:
+    async def get_active_sessions(self, user_id: Optional[str] = None) -> List[Dict]:
         async with self._lock:
-            active = [s for s in self.sessions.values() if s.get("status") == "active"]
+            active = [
+                s for s in self.sessions.values()
+                if s.get("status") == "active" and (user_id is None or s.get("user_id") == user_id)
+            ]
             sorted_active = sorted(
                 active, 
                 key=lambda x: str(x.get("start_time", "")), 
@@ -426,6 +457,7 @@ class DatabaseConnection:
         self.chunks_collection: Optional[AsyncIOMotorCollection] = None
         self.summaries_collection: Optional[AsyncIOMotorCollection] = None
         self.sessions_collection: Optional[AsyncIOMotorCollection] = None
+        self.users_collection: Optional[AsyncIOMotorCollection] = None
         self.local_storage = local_storage
         self.connection_error: Optional[str] = None
         
@@ -456,6 +488,7 @@ class DatabaseConnection:
             self.chunks_collection = self.database[settings.CHUNKS_COLLECTION]
             self.summaries_collection = self.database[settings.SUMMARIES_COLLECTION]
             self.sessions_collection = self.database["sessions"]
+            self.users_collection = self.database["users"]
             
             await self.create_indexes()
             self.connection_error = None
@@ -495,7 +528,11 @@ class DatabaseConnection:
             await self.summaries_collection.create_index("timestamp")
             
             await self.sessions_collection.create_index("session_id")
+            await self.sessions_collection.create_index("user_id")
             await self.sessions_collection.create_index("start_time")
+
+            await self.users_collection.create_index("user_id", unique=True)
+            await self.users_collection.create_index("email", unique=True)
             logger.info("Database indexes verified successfully")
         except Exception as e:
             logger.warning(f"Notice: creating database indexes skipped or failed: {e}")
@@ -711,19 +748,72 @@ class SummaryOperations:
         return await db.local_storage.get_all_summaries(limit)
 
 
+class UserOperations:
+    """Operations for user accounts across MongoDB and persistent local storage."""
+
+    @staticmethod
+    async def create_user(user_id: str, name: str, email: str, password_hash: str) -> Dict[str, Any]:
+        now = datetime.utcnow().isoformat()
+        user_doc = {
+            "user_id": user_id,
+            "name": name.strip(),
+            "email": email.strip().lower(),
+            "password_hash": password_hash,
+            "created_at": now,
+        }
+        await db.local_storage.create_user(user_doc)
+
+        if db.is_connected():
+            try:
+                mongo_doc = {**user_doc}
+                await db.users_collection.insert_one(mongo_doc)
+            except Exception as e:
+                logger.warning(f"Error saving user to MongoDB: {e}")
+
+        return user_doc
+
+    @staticmethod
+    async def get_user_by_email(email: str) -> Optional[Dict]:
+        email_lower = email.strip().lower()
+        if db.is_connected():
+            try:
+                user = await db.users_collection.find_one({"email": email_lower})
+                if user:
+                    user["_id"] = str(user["_id"])
+                    return user
+            except Exception as e:
+                logger.warning(f"Error reading user by email from MongoDB: {e}")
+
+        return await db.local_storage.get_user_by_email(email_lower)
+
+    @staticmethod
+    async def get_user_by_id(user_id: str) -> Optional[Dict]:
+        if db.is_connected():
+            try:
+                user = await db.users_collection.find_one({"user_id": user_id})
+                if user:
+                    user["_id"] = str(user["_id"])
+                    return user
+            except Exception as e:
+                logger.warning(f"Error reading user by id from MongoDB: {e}")
+
+        return await db.local_storage.get_user_by_id(user_id)
+
+
 class SessionOperations:
     """Operations for session management across MongoDB and persistent storage."""
     
     @staticmethod
-    async def create_session(session_id: str, metadata: Optional[Dict] = None) -> bool:
+    async def create_session(session_id: str, metadata: Optional[Dict] = None, user_id: Optional[str] = None) -> bool:
         """Create a new session in storage."""
-        await db.local_storage.create_session(session_id, metadata)
-        logger.info(f"[Storage] Created session {session_id}")
+        await db.local_storage.create_session(session_id, metadata, user_id=user_id)
+        logger.info(f"[Storage] Created session {session_id} for user {user_id}")
 
         if db.is_connected():
             try:
                 document = {
                     "session_id": session_id,
+                    "user_id": user_id,
                     "start_time": datetime.utcnow(),
                     "status": "active",
                     "metadata": metadata or {},
@@ -760,11 +850,14 @@ class SessionOperations:
         return True
 
     @staticmethod
-    async def get_active_sessions() -> List[Dict]:
-        """Get all active sessions."""
+    async def get_active_sessions(user_id: Optional[str] = None) -> List[Dict]:
+        """Get all active sessions (optionally filtered by user_id)."""
         if db.is_connected():
             try:
-                cursor = db.sessions_collection.find({"status": "active"}).sort("start_time", -1)
+                query = {"status": "active"}
+                if user_id is not None:
+                    query["user_id"] = user_id
+                cursor = db.sessions_collection.find(query).sort("start_time", -1)
                 sessions = await cursor.to_list(length=None)
                 if sessions:
                     for session in sessions:
@@ -773,7 +866,7 @@ class SessionOperations:
             except Exception as e:
                 logger.warning(f"Error retrieving active sessions from MongoDB: {e}. Falling back to local storage.")
 
-        return await db.local_storage.get_active_sessions()
+        return await db.local_storage.get_active_sessions(user_id=user_id)
 
     @staticmethod
     async def get_session(session_id: str) -> Optional[Dict]:
@@ -790,20 +883,21 @@ class SessionOperations:
         return await db.local_storage.get_session(session_id)
 
     @staticmethod
-    async def get_all_sessions(limit: int = 100) -> List[Dict]:
-        """Get all sessions (newest first)."""
+    async def get_all_sessions(limit: int = 100, user_id: Optional[str] = None) -> List[Dict]:
+        """Get all sessions (newest first, optionally filtered by user_id)."""
         if db.is_connected():
             try:
-                cursor = db.sessions_collection.find().sort("start_time", -1).limit(limit)
+                query = {"user_id": user_id} if user_id is not None else {}
+                cursor = db.sessions_collection.find(query).sort("start_time", -1).limit(limit)
                 sessions = await cursor.to_list(length=limit)
-                if sessions:
+                if sessions is not None:
                     for s in sessions:
                         s["_id"] = str(s["_id"])
                     return sessions
             except Exception as e:
                 logger.warning(f"Error retrieving all sessions from MongoDB: {e}. Falling back to local storage.")
 
-        return await db.local_storage.get_all_sessions(limit)
+        return await db.local_storage.get_all_sessions(limit=limit, user_id=user_id)
 
     @staticmethod
     async def update_session_summary_status(session_id: str, has_summary: bool = True) -> bool:

@@ -290,4 +290,36 @@ class MeetingDetailResponse(BaseModel):
     combined_transcript: str = Field(default="", description="Full stitched transcript")
     chunks: List[Dict[str, Any]] = Field(default_factory=list, description="Processed chunk details")
     summary: Optional[StructuredSummary] = Field(default=None, description="Structured summary if available")
-    summary_metadata: Optional[Dict[str, Any]] = Field(default=None, description="Generation metadata (model, timestamp, version)")
+    summary_metadata: Optional[Dict[str, Any]] = Field(default=None, description="Generation metadata (model, timestamp, version)")
+
+
+# ============================================================================
+# Authentication & User Schemas
+# ============================================================================
+
+class UserRegisterRequest(BaseModel):
+    """Request payload for user registration"""
+    name: str = Field(..., min_length=2, max_length=100, description="User's full name")
+    email: str = Field(..., min_length=3, max_length=255, description="User's email address")
+    password: str = Field(..., min_length=6, max_length=128, description="User's password")
+
+
+class UserLoginRequest(BaseModel):
+    """Request payload for user login"""
+    email: str = Field(..., description="User's email address")
+    password: str = Field(..., description="User's password")
+
+
+class UserResponse(BaseModel):
+    """Public user account representation"""
+    user_id: str = Field(..., description="Unique user ID")
+    name: str = Field(..., description="User's full name")
+    email: str = Field(..., description="User's email address")
+    created_at: Optional[Any] = Field(default=None, description="Account creation timestamp")
+
+
+class AuthResponse(BaseModel):
+    """Authentication response containing JWT token and user profile"""
+    access_token: str = Field(..., description="JWT bearer access token")
+    token_type: str = Field(default="bearer", description="Token type")
+    user: UserResponse = Field(..., description="Authenticated user details")

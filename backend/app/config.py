@@ -17,6 +17,10 @@ class Settings:
     HOST: str = "localhost"
     PORT: int = 8000
     DEBUG: bool = os.getenv("DEBUG", "True").lower() == "true"
+
+    # Authentication & JWT Configuration
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "nexora-meeting-assistant-jwt-secret-key-2026")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))  # 7 days
     
     # MongoDB Configuration
     MONGODB_URL: str = os.getenv("MONGODB_URL", "mongodb://localhost:27017")

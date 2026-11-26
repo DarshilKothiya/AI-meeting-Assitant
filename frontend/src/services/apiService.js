@@ -4,6 +4,8 @@
 import axios from 'axios';
 
 const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const TOKEN_KEY = 'nexora_auth_token';
+const USER_KEY = 'nexora_user';
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -13,8 +15,14 @@ const api = axios.create({
   },
 });
 
+let onUnauthorizedCallback = null;
+
 api.interceptors.request.use(
   (config) => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
     console.log(`Making ${config.method?.toUpperCase()} request to ${config.url}`);
     return config;
   },
@@ -27,6 +35,13 @@ api.interceptors.response.use(
     console.error('API Error:', error);
 
     if (error.response) {
+      if (error.response.status === 401 && !error.config?.url?.includes('/auth/')) {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(USER_KEY);
+        if (onUnauthorizedCallback) {
+          onUnauthorizedCallback();
+        }
+      }
       const message =
         error.response.data?.detail ||
         error.response.data?.error ||
@@ -41,6 +56,49 @@ api.interceptors.response.use(
 );
 
 class ApiService {
+  setUnauthorizedHandler(cb) {
+    onUnauthorizedCallback = cb;
+  }
+
+  getToken() {
+    return localStorage.getItem(TOKEN_KEY);
+  }
+
+  getStoredUser() {
+    try {
+      const raw = localStorage.getItem(USER_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async register(name, email, password) {
+    const response = await api.post('/auth/register', { name, email, password });
+    const { access_token, user } = response.data;
+    localStorage.setItem(TOKEN_KEY, access_token);
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    return response.data;
+  }
+
+  async login(email, password) {
+    const response = await api.post('/auth/login', { email, password });
+    const { access_token, user } = response.data;
+    localStorage.setItem(TOKEN_KEY, access_token);
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    return response.data;
+  }
+
+  async getMe() {
+    const response = await api.get('/auth/me');
+    localStorage.setItem(USER_KEY, JSON.stringify(response.data));
+    return response.data;
+  }
+
+  logout() {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  }
   async getSystemHealth() {
     const response = await api.get('/health');
     return response.data;
