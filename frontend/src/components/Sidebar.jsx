@@ -1,12 +1,33 @@
 import React from 'react';
+import {
+  LayoutDashboardIcon,
+  FolderIcon,
+  MicIcon,
+  SparklesIcon,
+  CheckSquareIcon,
+  SunIcon,
+  MoonIcon,
+  LogOutIcon,
+  ZapIcon,
+} from './Icons';
 
-const Sidebar = ({ activeTab, onTabChange, isConnected, isOpen, onClose, user, onLogout }) => {
+const Sidebar = ({
+  activeTab,
+  onTabChange,
+  isConnected,
+  isOpen,
+  onClose,
+  user,
+  onLogout,
+  theme,
+  onToggleTheme,
+}) => {
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-    { id: 'meetings', label: 'Meetings', icon: '📁' },
-    { id: 'live', label: 'Live Meeting', icon: '🎙️' },
-    { id: 'summaries', label: 'AI Summaries', icon: '✨' },
-    { id: 'action-items', label: 'Action Items', icon: '☑️' },
+    { id: 'dashboard', label: 'Dashboard', Icon: LayoutDashboardIcon },
+    { id: 'meetings', label: 'Meeting History', Icon: FolderIcon },
+    { id: 'live', label: 'Live Meeting', Icon: MicIcon },
+    { id: 'summaries', label: 'AI Summaries', Icon: SparklesIcon },
+    { id: 'action-items', label: 'Action Items', Icon: CheckSquareIcon },
   ];
 
   const handleItemClick = (id) => {
@@ -21,9 +42,7 @@ const Sidebar = ({ activeTab, onTabChange, isConnected, isOpen, onClose, user, o
       {/* Brand Header */}
       <div className="sidebar-header">
         <div className="brand-logo">
-          <div className="brand-icon">
-            N
-          </div>
+          <div className="brand-icon">N</div>
           <div className="brand-info">
             <span className="brand-title">Nexora</span>
             <span className="brand-subtitle">Meeting Assistant</span>
@@ -32,21 +51,39 @@ const Sidebar = ({ activeTab, onTabChange, isConnected, isOpen, onClose, user, o
       </div>
 
       {/* Navigation Items */}
-      <nav className="sidebar-nav">
-        {navItems.map((item) => (
+      <nav className="sidebar-nav" aria-label="Main navigation">
+        {navItems.map(({ id, label, Icon }) => (
           <button
-            key={item.id}
-            className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
-            onClick={() => handleItemClick(item.id)}
+            key={id}
+            type="button"
+            className={`nav-item ${activeTab === id ? 'active' : ''}`}
+            onClick={() => handleItemClick(id)}
           >
-            <span className="nav-icon">{item.icon}</span>
-            <span>{item.label}</span>
+            <span className="nav-icon">
+              <Icon size={18} />
+            </span>
+            <span>{label}</span>
           </button>
         ))}
       </nav>
 
-      {/* Footer System Status & User Account */}
+      {/* Footer: Theme, User Account, Status */}
       <div className="sidebar-footer">
+        <button
+          type="button"
+          className="theme-toggle-btn"
+          onClick={onToggleTheme}
+          title={`Switch to ${theme === 'light' ? 'Dark' : 'Light'} Mode`}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {theme === 'light' ? <SunIcon size={15} /> : <MoonIcon size={15} />}
+            <span>{theme === 'light' ? 'Light Mode' : 'Dark Mode'}</span>
+          </span>
+          <div className={`theme-toggle-pill ${theme === 'light' ? 'light' : ''}`}>
+            <div className="theme-toggle-knob" />
+          </div>
+        </button>
+
         {user && (
           <div className="user-account-card">
             <div className="user-account-info">
@@ -63,20 +100,32 @@ const Sidebar = ({ activeTab, onTabChange, isConnected, isOpen, onClose, user, o
               className="btn-logout"
               onClick={onLogout}
               title="Sign Out"
+              aria-label="Sign Out"
             >
-              Sign Out
+              <LogOutIcon size={15} />
             </button>
           </div>
         )}
 
-        <div className="status-pill">
+        <div className="status-pill" title="Backend WebSocket Connection">
           <div className={`status-dot ${isConnected ? 'connected' : ''}`} />
-          <span>{isConnected ? 'Backend Connected' : 'Connecting...'}</span>
+          <span>{isConnected ? 'Live Sync Connected' : 'Connecting...'}</span>
         </div>
 
-        <div className="groq-badge">
-          <span>Groq AI Ready</span>
-          <span>⚡ Ultra-Fast LLM</span>
+        <div
+          className="status-pill"
+          style={{
+            justifyContent: 'space-between',
+            color: 'var(--ai-primary)',
+            background: 'var(--ai-primary-soft)',
+            borderColor: 'rgba(25, 118, 210, 0.25)',
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+            <ZapIcon size={14} />
+            Groq AI Ready
+          </span>
+          <span style={{ fontSize: '0.68rem', opacity: 0.85 }}>LLM</span>
         </div>
       </div>
     </aside>

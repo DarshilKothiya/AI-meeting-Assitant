@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 import Dashboard from './components/Dashboard';
@@ -6,6 +6,7 @@ import MeetingsList from './components/MeetingsList';
 import MeetingDetails from './components/MeetingDetails';
 import ActionItemsView from './components/ActionItemsView';
 import AuthPage from './components/AuthPage';
+import ToastContainer from './components/ToastContainer';
 import { webSocketService } from './services/websocketService';
 import { apiService } from './services/apiService';
 
@@ -26,10 +27,12 @@ const deriveEmotions = (chunks) => {
     }
   });
 
-  return Object.entries(counts).map(([name, count]) => ({
-    name,
-    percentage: total > 0 ? Math.round((count / total) * 100) : 0,
-  }));
+  return Object.entries(counts)
+    .map(([name, count]) => ({
+      name,
+      percentage: total > 0 ? Math.round((count / total) * 100) : 0,
+    }))
+    .sort((a, b) => b.percentage - a.percentage);
 };
 
 // Technical jargon terms helper
@@ -54,6 +57,7 @@ const deriveTerms = (chunks) => {
 };
 
 function App() {
+  const [theme, setTheme] = useState(() => localStorage.getItem('nexora_theme') || 'dark');
   const [user, setUser] = useState(() => apiService.getStoredUser());
   const [authChecking, setAuthChecking] = useState(() => Boolean(apiService.getToken()));
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -63,12 +67,14 @@ function App() {
   const [selectedDevice, setSelectedDevice] = useState('');
   const [showStartDialog, setShowStartDialog] = useState(false);
   const [sessionName, setSessionName] = useState('');
+  const [toasts, setToasts] = useState([]);
 
   const [state, setState] = useState({
     isConnected: false,
     currentSession: null,
     currentSessionName: '',
-    sessionStatus: 'idle', // idle, recording, completed
+    sessionStatus: 'idle',
+    sessionStartedAt: null,
     chunks: [],
     finalSummary: null,
     error: null,
@@ -81,6 +87,28 @@ function App() {
     technicalTerms: [],
   });
 
+  // Apply theme attribute to document root
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('nexora_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
+  const addToast = useCallback((toast) => {
+    const id = Date.now() + Math.random();
+    setToasts((prev) => [...prev.slice(-3), { id, ...toast }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4500);
+  }, []);
+
+  const dismissToast = useCallback((id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
   const handleLogout = () => {
     apiService.logout();
     webSocketService.disconnect();
@@ -92,14 +120,11 @@ function App() {
       currentSession: null,
       currentSessionName: '',
       sessionStatus: 'idle',
+      sessionStartedAt: null,
       chunks: [],
       finalSummary: null,
       error: null,
-      sessionStats: {
-        totalChunks: 0,
-        totalDuration: 0,
-        currentChunk: 0,
-      },
+      sessionStats: { totalChunks: 0, totalDuration: 0, currentChunk: 0 },
       emotions: [],
       technicalTerms: [],
     });
@@ -134,7 +159,6 @@ function App() {
 
     const initialize = async () => {
       try {
-        // Load audio input devices
         try {
           const devices = await apiService.getAudioDevices();
           setAudioDevices(devices || []);
@@ -145,19 +169,18 @@ function App() {
           console.warn('Audio devices fetch error:', e);
         }
 
-        // Connect WebSocket
         await webSocketService.connect();
 
         webSocketService.onConnected(() => {
-          setState(prev => ({ ...prev, isConnected: true, error: null }));
+          setState((prev) => ({ ...prev, isConnected: true, error: null }));
         });
 
         webSocketService.onDisconnected(() => {
-          setState(prev => ({ ...prev, isConnected: false }));
+          setState((prev) => ({ ...prev, isConnected: false }));
         });
 
         webSocketService.onChunkUpdate((sessionId, chunk) => {
-          setState(prev => {
+          setState((prev) => {
             if (sessionId === prev.currentSession) {
               const newChunks = [...prev.chunks, chunk];
               return {
@@ -177,7 +200,7 @@ function App() {
         });
 
         webSocketService.onSummaryUpdate((sessionId, summary) => {
-          setState(prev => {
+          setState((prev) => {
             if (sessionId === prev.currentSession) {
               return {
                 ...prev,
@@ -190,13 +213,13 @@ function App() {
         });
 
         webSocketService.onError((error) => {
-          setState(prev => ({ 
-            ...prev, 
-            error: typeof error === 'string' ? error : error?.message || 'WebSocket error' 
+          setState((prev) => ({
+            ...prev,
+            error: typeof error === 'string' ? error : error?.message || 'WebSocket error',
           }));
         });
       } catch (err) {
-        setState(prev => ({ ...prev, error: 'Failed to connect to backend service' }));
+        setState((prev) => ({ ...prev, error: 'Failed to connect to backend service' }));
       }
     };
 
@@ -209,7 +232,9 @@ function App() {
 
   const handleStartSession = async () => {
     try {
-      const name = sessionName.trim() || `Meeting ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      const name =
+        sessionName.trim() ||
+        `Meeting ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
       const sessionData = {
         session_name: name,
         metadata: {
@@ -221,11 +246,12 @@ function App() {
 
       const response = await apiService.startSession(sessionData);
 
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         currentSession: response.session_id,
         currentSessionName: name,
         sessionStatus: 'recording',
+        sessionStartedAt: Date.now(),
         chunks: [],
         finalSummary: null,
         error: null,
@@ -242,8 +268,15 @@ function App() {
       setShowStartDialog(false);
       setSessionName('');
       setActiveTab('live');
+      addToast({
+        type: 'success',
+        title: 'Recording Started',
+        message: `Live transcription active for "${name}".`,
+      });
     } catch (err) {
-      setState(prev => ({ ...prev, error: 'Failed to start recording session: ' + err.message }));
+      const msg = 'Failed to start recording session: ' + err.message;
+      setState((prev) => ({ ...prev, error: msg }));
+      addToast({ type: 'error', title: 'Start Failed', message: err.message });
     }
   };
 
@@ -252,19 +285,25 @@ function App() {
       if (state.currentSession) {
         webSocketService.unsubscribeFromSession(state.currentSession);
         await apiService.stopSession(state.currentSession);
-        
+
         const completedId = state.currentSession;
-        setState(prev => ({
+        setState((prev) => ({
           ...prev,
           sessionStatus: 'completed',
         }));
 
-        // Switch to Meeting Details view for immediate summary generation!
+        addToast({
+          type: 'success',
+          title: 'Session Completed',
+          message: 'Transcript saved. You can now generate an AI summary.',
+        });
+
         setSelectedMeetingId(completedId);
         setActiveTab('details');
       }
     } catch (err) {
-      setState(prev => ({ ...prev, error: 'Failed to stop session: ' + err.message }));
+      setState((prev) => ({ ...prev, error: 'Failed to stop session: ' + err.message }));
+      addToast({ type: 'error', title: 'Stop Failed', message: err.message });
     }
   };
 
@@ -285,12 +324,25 @@ function App() {
   }
 
   if (!user) {
-    return <AuthPage onAuthSuccess={(loggedInUser) => setUser(loggedInUser)} />;
+    return (
+      <>
+        <AuthPage
+          onAuthSuccess={(loggedInUser) => {
+            setUser(loggedInUser);
+            addToast({
+              type: 'success',
+              title: 'Welcome to Nexora',
+              message: `Signed in as ${loggedInUser.name || loggedInUser.email}`,
+            });
+          }}
+        />
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      </>
+    );
   }
 
   return (
     <div className="app-shell">
-      {/* Sidebar Navigation */}
       <Sidebar
         activeTab={activeTab}
         onTabChange={(tab) => {
@@ -304,52 +356,48 @@ function App() {
         onClose={() => setSidebarOpen(false)}
         user={user}
         onLogout={handleLogout}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
 
-      {/* Main Content Area */}
       <div className="app-main">
-        {/* Top Navbar */}
         <Navbar
           sessionStatus={state.sessionStatus}
           activeSessionName={state.currentSessionName}
           onStartSession={() => setShowStartDialog(true)}
           onStopSession={handleStopSession}
-          onToggleSidebar={() => setSidebarOpen(prev => !prev)}
+          onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
           audioDevices={audioDevices}
           selectedDevice={selectedDevice}
           onSelectDevice={setSelectedDevice}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
 
-        {/* View Routing */}
         {activeTab === 'details' && selectedMeetingId && (
           <MeetingDetails
             meetingId={selectedMeetingId}
             onBack={() => setActiveTab('meetings')}
+            onNotify={addToast}
           />
         )}
 
-        {activeTab === 'meetings' && (
+        {(activeTab === 'meetings' || activeTab === 'summaries') && (
           <MeetingsList
             onSelectMeeting={handleSelectMeeting}
             onStartNewMeeting={() => setShowStartDialog(true)}
-          />
-        )}
-
-        {activeTab === 'summaries' && (
-          <MeetingsList
-            onSelectMeeting={handleSelectMeeting}
-            onStartNewMeeting={() => setShowStartDialog(true)}
+            onNotify={addToast}
           />
         )}
 
         {activeTab === 'action-items' && (
-          <ActionItemsView
-            onSelectMeeting={handleSelectMeeting}
-          />
+          <ActionItemsView onSelectMeeting={handleSelectMeeting} />
         )}
 
         {(activeTab === 'dashboard' || activeTab === 'live') && (
           <Dashboard
+            mode={activeTab}
+            user={user}
             state={state}
             onStartSession={handleStartSession}
             onStopSession={handleStopSession}
@@ -357,6 +405,8 @@ function App() {
               setSelectedMeetingId(id);
               setActiveTab('details');
             }}
+            onSelectMeeting={handleSelectMeeting}
+            onNavigateTab={setActiveTab}
             showStartDialog={showStartDialog}
             setShowStartDialog={setShowStartDialog}
             sessionName={sessionName}
@@ -364,6 +414,8 @@ function App() {
           />
         )}
       </div>
+
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
